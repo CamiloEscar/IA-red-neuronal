@@ -79,4 +79,3 @@ IA-red-neuronal/
 ├── README.md                     # Descripción general
 ├── requirements.txt              # Dependencias
 └── .gitignore
-```bash
