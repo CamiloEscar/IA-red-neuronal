@@ -58,8 +58,8 @@ IA-red-neuronal/
 │   └── __init__.py
 │
 ├── data/                         # Datasets 
-│   ├── dataset1.csv
-│   ├── dataset2.csv
+│   ├── dataset1_pacientes.csv
+│   ├── dataset2_sensores.csv
 │   └── metadata/                 # (archivos extra)
 │       └── metadata.csv
 │
