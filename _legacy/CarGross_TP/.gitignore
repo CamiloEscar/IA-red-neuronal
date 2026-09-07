@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Resultados generados (conservar carpeta vacía con .gitkeep)
+results/*.csv
+results/*.txt
+results/graficos/*.png
+results/graficos/*.pdf
+
+# Entornos virtuales
+venv/
+.venv/
+env/
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

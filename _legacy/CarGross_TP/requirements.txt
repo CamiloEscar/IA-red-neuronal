@@ -1,0 +1,13 @@
+# CarGross — Dependencias
+# ========================
+# Este proyecto usa únicamente la librería estándar de Python.
+# No se requiere instalar ningún paquete externo.
+#
+# Requisito mínimo:
+#   python >= 3.6
+#
+# Para verificar tu versión:
+#   python --version
+#
+# Módulos estándar utilizados internamente:
+#   sys, os, csv, argparse, time, datetime
