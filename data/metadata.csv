@@ -1,0 +1,17 @@
+dataset,feature,threshold,rule,unit,justification
+dataset1_pacientes,edad,40,gte,años,"Mediana adultez, factor de riesgo cardiovascular"
+dataset1_pacientes,presion_sistolica,140,gte,mmHg,Hipertensión grado 1 (guías AHA)
+dataset1_pacientes,presion_diastolica,90,gte,mmHg,Hipertensión grado 1 (guías AHA)
+dataset1_pacientes,colesterol,240,gte,mg/dL,Colesterol alto (guías ATP III)
+dataset1_pacientes,glucosa,110,gte,mg/dL,Glucosa alterada en ayunas (ADA)
+dataset1_pacientes,imc,30,gte,kg/m²,Obesidad (OMS)
+dataset1_pacientes,frecuencia_cardiaca,85,gte,lpm,Taquicardia en reposo (criterio clínico)
+dataset2_sensores,temperatura,75,gte,°C,Umbral de alerta operativa
+dataset2_sensores,vibracion,0.20,gte,mm/s,ISO 10816 para máquinas críticas
+dataset2_sensores,presion,103,gte,bar,Umbral alto operativo
+dataset2_sensores,voltaje,219,lt,V,Fuera de rango nominal 220V ±1V (umbral bajo: V < 219)
+dataset2_sensores,voltaje,221,gt,V,Fuera de rango nominal 220V ±1V (umbral alto: V > 221)
+dataset2_sensores,corriente,20,gte,A,Umbral alto operativo
+dataset2_sensores,rpm,1450,gte,RPM,Cerca del límite superior operativo
+dataset2_sensores,tiempo_operacion,3000,gte,horas,Umbral de mantenimiento
+# Convención: voltaje usa dos filas (lt 219 + gt 221) para modelar "fuera de rango nominal 220V ±1V"; las features restantes usan gte/lte
