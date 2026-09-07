@@ -41,44 +41,87 @@ Este documento registra las iteraciones del proyecto, qué se decidió en cada u
 - Decision D1.4: stability metric = pairwise agreement fraction vs run 0 (en lugar de ARI formal). Más simple para TP de grado, suficiente para N=55.
 - Cross-references: `src/CarGross.py`, `data/dataset1_pacientes.csv`, `data/metadata.csv`, `docs/04_algoritmo.md`.
 
-## Iteración 2 — Corridas con barrido de ρ
-
-**Estado**: pendiente.
-
-**Objetivo**: correr el barrido de $\rho$ sobre `dataset1_pacientes` (rango definido en `05_corridas_y_evaluacion.md` §2), registrar $K(\rho)$ y la stability metric pairwise vs run 0 para cada valor, y verificar que el comportamiento coincide con el esperado teóricamente (monotonicidad de $K$ y clustering no trivial).
-
-**Entregables previstos**:
-
-- `results/resultado_dataset1.csv` y `.txt` por cada valor de $\rho$ del barrido.
-- Tabla resumen con $K(\rho)$ y stability metric para el informe.
-
-## Iteración 3 — Barrido completo y comparaciones
-
-**Estado**: pendiente.
-
-**Objetivo**: completar el barrido de $\rho$ para ambos datasets (rango definido en `05_corridas_y_evaluacion.md`), analizar estabilidad entre corridas (ARI), contrastar con el `docs/informe.md` de `_legacy/CarGross_TP/`, y escribir el informe de corridas definitivo.
-
-**Entregables previstos**:
-
-- Resultados completos en `results/`.
-- Tablas con el formato definido en `05_corridas_y_evaluacion.md` §3.
-- Notas de comparación con el TFI previo.
-
-## Iteración 4 — Cierre del TFI
-
-**Estado**: pendiente.
-
-**Objetivo**: consolidar el manual de referencia, las FAQ y la PPT con audio exigidos por la consigna (`_legacy/CarGross_TP/consignas_TP.md` actividades 2 y 4), y verificar que la carátula, las referencias y el disclaimer estén completos.
-
-**Entregables previstos**:
-
-- `docs/manual.md` (alcances, instalación, test demo, FAQ).
-- PPT con audio (origen, características, aplicaciones, fortalezas/debilidades, diferencias con otras redes).
-- Carátula con logos UADER e IDTI Lab.
-
 ## Iteración 1.5 — Aislamiento del intento anterior
 
 - Decision D1.5.1: la carpeta `CarGross_TP/` (intento anterior no entregado) se mueve a `_legacy/CarGross_TP/` para evitar confusión con la entrega final.
 - Decision D1.5.2: se crea `_legacy/README.md` documentando el contenido de la carpeta.
 - Decision D1.5.3: las menciones a `CarGross_TP/` en los docs se actualizan a `_legacy/CarGross_TP/` con nota explicando el motivo.
 - Cross-references: `_legacy/`, `_legacy/CarGross_TP/`, `_legacy/README.md`, `docs/01_marco_teorico.md`.
+
+## Iteración 2 — Corridas con barrido de ρ
+
+**Fecha**: septiembre 2026.
+**Estado**: COMPLETADA.
+
+**Decisión**: ejecutar el barrido experimental completo definido en `05_corridas_y_evaluacion.md` §2.
+
+- Decision D2.1: matriz experimental = 3 valores de ρ × 2 datasets × R=5 barajados = 30 corridas totales.
+- Decision D2.2: rangos de ρ diferenciados por dataset. Pacientes: {0.40, 0.60, 0.80} (rango amplio para mostrar efecto). Sensores: {0.50, 0.65, 0.80} (rango más estrecho, se anticipó rigidez estructural).
+- Decision D2.3: implementación con `--shuffle N` para producir métrica de estabilidad interna (pairwise agreement vs run 0).
+- Decision D2.4: outputs en `results/r_<dataset>_r<rho>_s<seed>.{csv,txt}` con naming consistente.
+
+**Por qué estos valores de ρ**: rango amplio en pacientes (0.40–0.80) para capturar regímenes de baja/media/alta vigilancia; rango más estrecho en sensores (0.50–0.80) porque la intuición era que el dataset tiene pocas clases intrínsecas y ρ alto no agregaría información.
+
+**Resultados clave**: ver `docs/informe_corridas.md` §3 y §4.
+
+## Iteración 3 — Informe narrativo de corridas
+
+**Fecha**: septiembre 2026.
+**Estado**: COMPLETADA.
+
+**Decisión**: redactar `docs/informe_corridas.md` con interpretación narrativa, no solo tabla.
+
+- Decision D3.1: el informe incluye interpretaciones clínicas tentativas (no triaje automático) para los clusters del dataset pacientes.
+- Decision D3.2: el informe documenta honestamente que el dataset sensores es estructuralmente rígido (ρ no influye).
+- Decision D3.3: discovery clave — sensores tiene 6 vectores binarios únicos, ART1 produce 5 clusters efectivos (S027 absorbido por cluster 3 durante fit).
+
+**Por qué interpretaciones tentativas y no automáticas**: el modelo agrupa; el médico interpreta. Ver `docs/02_problema_y_alcance.md` §3 sobre el encuadre de "exploración, no triaje".
+
+## Iteración 4 — Cierre del TFI: manuales y materiales auxiliares
+
+**Fecha**: septiembre 2026.
+**Estado**: COMPLETADA.
+
+- Decision D4.1: `docs/manual_referencia.md` cubre las 4 secciones exigidas por la consigna (alcances/limitaciones, instalación, test demo, FAQ).
+- Decision D4.2: FAQ con 6 preguntas (exigían mínimo 3). Cubre: pocos clusters, exemplares vacíos, features no binarios, sensibilidad al orden, rigidez de sensores, comparación con otros algoritmos.
+- Decision D4.3: `docs/ppt_outline.md` con 13 slides + notas del orador. Duración sugerida ~10 min. Decisión: proveer outline, no generar el .pptx (requiere audio embebido, fuera del alcance automatizado).
+- Decision D4.4: `docs/caratula_template.md` con datos a completar y layout sugerido. Decisión: proveer template, no generar el PDF/imagen final (requiere logos UADER/IDTI que no están en el repo).
+
+## Iteración 4.5 — Corrección factual (verificación empírica)
+
+**Fecha**: septiembre 2026.
+**Estado**: COMPLETADA.
+
+**Decisión**: verificar empíricamente la afirmación de "5 vectores únicos" en sensores.
+
+- Decision D4.5.1: se escribió un script temporal que binariza el dataset con `DataLoader` y cuenta vectores únicos con `set()` de tuplas.
+- Decision D4.5.2: resultado empírico = **6 vectores únicos**, no 5. ART1 produce 5 clusters porque el sexto vector (S027, freq=1) se absorbe en el cluster 3 durante fit por un artefacto de orden de presentación + fast learning (AND entre S027 y T_3 produce el vector completo, ratio 1.0, pasa cualquier vigilancia).
+- Decision D4.5.3: corrección propagada a `docs/informe_corridas.md` (líneas 111, 145, 151, 198, 234) y `results/resumen_corridas.md` (líneas 71, 74).
+
+**Lección**: las afirmaciones cuantitativas en informes técnicos deben verificarse empíricamente, no por intuición. "5 clusters = 5 vectores únicos" era razonable pero incorrecto.
+
+## Iteración 5 — Limpieza final y publicación
+
+**Fecha**: septiembre 2026.
+**Estado**: COMPLETADA.
+
+- Decision D5.1: borrar `src/data_loader.py` y `src/utils.py` (eran placeholders vacíos del esqueleto original, nadie los importa).
+- Decision D5.2: agregar `*.pdf` al `.gitignore` (los papers Lau son material de la cátedra, no parte del entregable).
+- Decision D5.3: reescribir `README.md` raíz para reflejar el estado real del proyecto + documentar los 5 comandos de prueba.
+- Decision D5.4: 7 commits pusheados a GitHub con conventional commits format, sin atribución de IA.
+
+**Por qué borrar los archivos vacíos en vez de dejarlos**: el código está consolidado en `src/CarGross.py` (660 líneas) por la consigna oficial que exige "una red llamada `CarGross.py`". Archivos vacíos sugieren modularidad inexistente.
+
+## Resumen de cobertura
+
+| Iteración | Qué decidió | Estado |
+|-----------|--------------|--------|
+| 0 | Pivot MLP→ART1 | ✅ documentado |
+| 0.5 | metadata.csv + R=5 + voltaje out_of_range | ✅ documentado |
+| 1 | Implementación ART1 puro stdlib | ✅ documentado |
+| 1.5 | Aislamiento de CarGross_TP/ a _legacy/ | ✅ documentado |
+| 2 | 30 corridas con barrido de ρ | ✅ NUEVO |
+| 3 | Informe narrativo + corrección 6 vectores | ✅ NUEVO |
+| 4 | Manual + PPT outline + Carátula template | ✅ NUEVO |
+| 4.5 | Verificación empírica 6 vs 5 vectores | ✅ NUEVO |
+| 5 | Limpieza src/ + gitignore + README + push | ✅ NUEVO |
