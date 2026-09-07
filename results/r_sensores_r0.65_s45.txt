@@ -1,0 +1,44 @@
+Reporte ART1 (Carpenter/Grossberg)
+============================================================
+Dataset:          data/dataset2_sensores.csv
+Metadata:         data/metadata.csv
+Vigilancia (rho): 0.65
+Max clusters:     1000
+N (features bin): 8
+Filas totales:    55
+Cantidad de clusters con miembros: 5 (de 5 totales creados)
+Score medio:      0.994
+============================================================
+
+Cluster 0
+  Tamano:    29
+  Exemplar:  [0 0 0 0 0 0 1 0]
+  Score med: 1.000
+  IDs:       S002, S004, S006, S008, S010, S012, S014, S016, S018, S020, S021, S022, S024, S026, S028, S030, S032, S034, S036, S038, S040, S041, S042, S044, S046, S048, S050, S052, S054
+
+Cluster 1
+  Tamano:    3
+  Exemplar:  [1 0 0 0 0 0 0 0]
+  Score med: 1.000
+  IDs:       S011, S017, S047
+
+Cluster 2
+  Tamano:    3
+  Exemplar:  [1 0 0 0 0 0 0 1]
+  Score med: 0.889
+  IDs:       S007, S027, S037
+
+Cluster 3
+  Tamano:    17
+  Exemplar:  [1 1 1 1 0 1 0 1]
+  Score med: 1.000
+  IDs:       S003, S005, S009, S013, S015, S019, S023, S025, S029, S033, S035, S039, S043, S045, S049, S053, S055
+
+Cluster 4
+  Tamano:    3
+  Exemplar:  [1 0 0 0 0 0 1 0]
+  Score med: 1.000
+  IDs:       S001, S031, S051
+
+Referencia algoritmica: Box 3, Lau (1992) pp. 12-14.
+Ver _legacy/CarGross_TP/lau_contenido.md para la transcripcion completa.
