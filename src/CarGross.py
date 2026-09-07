@@ -6,49 +6,36 @@ CarGross.py
 Implementacion del clasificador Carpenter/Grossberg (ART1, Adaptive Resonance
 Theory 1) segun el algoritmo del Box 3 de Lau (1992), pp. 12-14.
 
-Trabajo Final Integrador (TFI) de la materia Inteligencia Artificial.
-UADER - Instituto de Desarrollo Territorial e Ingenieria (IDTI).
-Laboratorio de Redes Neuronales Artificiales.
-
-Este modulo provee una red ART1 de aprendizaje no supervisado que realiza
-clustering sobre patrones binarios. Acepta datos continuos desde CSV y los
-binariza automaticamente usando reglas declaradas en un metadata CSV
-separado. La CLI procesa un dataset y emite dos archivos de salida: un CSV
-con la asignacion de cluster por fila y un TXT con un reporte legible por
-humano. Tambien incluye modo ``--man`` (manual extendido), ``--test``
-(smoke test) y ``--shuffle N`` para evaluar la estabilidad del algoritmo
-frente al orden de presentacion de los patrones.
-
 Mapeo de notacion matematica (paper Lau 1992 Box 3) a variables del codigo:
 
 +--------------------+-------------------------------------------------+----------------------------------+
 | Simbolo matematico | Significado                                      | Variable en codigo               |
 +====================+=================================================+==================================+
-| N                  | Dimension del vector de entrada                  | self.n_inputs                    |
+| N                  | Dimension del vector de entrada                  | self.dimension_entrada           |
 +--------------------+-------------------------------------------------+----------------------------------+
-| M                  | Cantidad maxima de clusters                      | self.max_clusters                |
+| M                  | Cantidad maxima de clusters                      | self.maximo_clusters             |
 +--------------------+-------------------------------------------------+----------------------------------+
-| x                  | Vector de entrada binario                        | x (lista de ints)                |
+| x                  | Vector de entrada binario                        | entrada (lista de ints)          |
 +--------------------+-------------------------------------------------+----------------------------------+
-| X                  | Matriz de entrada (N filas x M cols)             | X (lista de listas de ints)      |
+| X                  | Matriz de entrada (N filas x M cols)             | entradas (lista de listas)       |
 +--------------------+-------------------------------------------------+----------------------------------+
-| t_ij               | Peso top-down entre input i y cluster j         | self.t_weights[i][j]             |
+| t_ij               | Peso top-down entre input i y cluster j         | self.pesos_descendentes[i][j]    |
 +--------------------+-------------------------------------------------+----------------------------------+
-| b_ij               | Peso bottom-up entre input i y cluster j        | self.b_weights[i][j]             |
+| b_ij               | Peso bottom-up entre input i y cluster j        | self.pesos_ascendentes[i][j]     |
 +--------------------+-------------------------------------------------+----------------------------------+
-| mu_j               | Puntaje de coincidencia del cluster j            | matching_scores[j]               |
+| mu_j               | Puntaje de coincidencia del cluster j            | puntajes[j]                      |
 +--------------------+-------------------------------------------------+----------------------------------+
-| j*                 | Indice del cluster con mejor coincidencia        | j_star                           |
+| j*                 | Indice del cluster con mejor coincidencia        | indice_mejor                     |
 +--------------------+-------------------------------------------------+----------------------------------+
-| rho                | Umbral de vigilancia                             | self.vigilance                   |
+| rho                | Umbral de vigilancia                             | self.vigilancia                  |
 +--------------------+-------------------------------------------------+----------------------------------+
-| ||X||              | Norma L1 del vector X (= suma de sus bits)      | norm(x) = sum(x)                 |
+| ||X||              | Norma L1 del vector X (= suma de sus bits)      | sum(x)                           |
 +--------------------+-------------------------------------------------+----------------------------------+
-| ||T*X||            | Suma de productos t_ij * x_i                    | vigilance_test numerator         |
+| ||T*X||            | Suma de productos t_ij * x_i                    | _test_de_vigilancia numerator    |
 +--------------------+-------------------------------------------------+----------------------------------+
-| phi (relacion)     | ||T*X|| / ||X|| - pasa si > rho                 | (computed in _vigilance_test)    |
+| phi (relacion)     | ||T*X|| / ||X|| - pasa si > rho                 | (computed in _test_de_vigilancia)|
 +--------------------+-------------------------------------------------+----------------------------------+
-| AND logico         | Operacion bitwise AND para adaptacion           | (computed in _adapt)             |
+| AND logico         | Operacion bitwise AND para adaptacion           | (computed in _adaptar)           |
 +--------------------+-------------------------------------------------+----------------------------------+
 
 Algoritmo (Box 3 de Lau 1992, pp. 12-14):
@@ -63,8 +50,6 @@ Algoritmo (Box 3 de Lau 1992, pp. 12-14):
   Step 6: desactivar el mejor cluster temporalmente
   Step 7: adaptar t_ij* = t_ij* * x_i (AND), renormalizar b
   Step 8: rehabilitar clusters desactivados, repetir desde Step 2
-
-Ver ``docs/04_algoritmo.md`` para la descripcion completa.
 """
 
 import argparse
@@ -80,27 +65,27 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 class CarGrossError(Exception):
-    """Excepcion base para todos los errores especificos del modulo."""
+    pass
 
 
 class FileNotFoundCarGrossError(CarGrossError):
-    """Archivo requerido no encontrado en el sistema de archivos."""
+    pass
 
 
 class MetadataError(CarGrossError):
-    """Metadata invalido, incompleto o inconsistente con el dataset."""
+    pass
 
 
 class BinarizationError(CarGrossError):
-    """Error durante el proceso de binarizacion de una feature."""
+    pass
 
 
 class VigilanceError(CarGrossError):
-    """Parametro de vigilancia fuera del rango [0,1] o invalido."""
+    pass
 
 
 class DatasetError(CarGrossError):
-    """Error en la estructura o contenido del dataset de entrada."""
+    pass
 
 
 # ---------------------------------------------------------------------------
@@ -108,402 +93,151 @@ class DatasetError(CarGrossError):
 # ---------------------------------------------------------------------------
 
 class ART1:
-    """Red neuronal ART1 (Adaptive Resonance Theory 1).
-
-    ART1 es un modelo de aprendizaje no supervisado para clustering de
-    patrones binarios. Resuelve el dilema estabilidad-plasticidad: puede
-    aprender patrones nuevos sin olvidar los antiguos.
-
-    Implementacion fiel del Box 3 de Lau (1992). Los pesos top-down ``t``
-    almacenan los exemplares activos (vector binario de longitud N) y los
-    pesos bottom-up ``b`` se usan para calcular los puntajes de coincidencia.
-
-    Parameters
-    ----------
-    n_inputs : int
-        Dimension del vector de entrada binario (N).
-    vigilance : float
-        Umbral de vigilancia rho en [0,1]. Controla el compromiso
-        estabilidad-plasticidad: cerca de 1 exige coincidencia estricta y
-        favorece la creacion de clusters nuevos; cerca de 0 acepta
-        coincidencias parciales y consolida los clusters existentes.
-    max_clusters : int, default 1000
-        Tope de seguridad para evitar crecimiento descontrolado cuando
-        la vigilancia es alta y los datos son ruidosos. Si la red intenta
-        crear un cluster nuevo habiendo alcanzado este limite, levanta
-        DatasetError.
-
-    Examples
-    --------
-    >>> net = ART1(n_inputs=7, vigilance=0.6)
-    >>> net.fit([[1,0,1,1,0,0,1], [1,0,1,1,0,0,1], [0,1,0,0,1,1,0]])
-    >>> net.n_clusters
-    2
-    >>> net.predict([1,0,1,1,0,0,1])
-    (0, 1.0)
+    """Red neuronal ART1 (Adaptive Resonance Theory 1) para clustering
+    no supervisado de patrones binarios. ``vigilancia`` (rho) controla el
+    dilema estabilidad-plasticidad y ``maximo_clusters`` acota el crecimiento.
+    Implementacion fiel del Box 3 de Lau (1992), pp. 12-14.
     """
 
-    def __init__(self, n_inputs, vigilance=0.5, max_clusters=1000):
-        """Inicializa la red y crea las matrices de pesos vacias.
-
-        Valida que ``n_inputs`` y ``max_clusters`` sean enteros positivos
-        y que ``vigilance`` este en [0,1]. Luego invoca ``_init_weights``
-        para materializar las matrices ``t`` (top-down) y ``b`` (bottom-up)
-        con la forma N x M indicada por el Box 3 de Lau (1992).
-
-        Raises
-        ------
-        DatasetError
-            Si ``n_inputs`` o ``max_clusters`` no son enteros positivos.
-        VigilanceError
-            Si ``vigilance`` esta fuera de [0,1].
-        """
-        if not isinstance(n_inputs, int) or n_inputs <= 0:
+    def __init__(self, dimension_entrada, vigilancia=0.5, maximo_clusters=1000):
+        if not isinstance(dimension_entrada, int) or dimension_entrada <= 0:
             raise DatasetError(
-                f"n_inputs debe ser entero positivo, recibio {n_inputs!r}"
+                f"dimension_entrada debe ser entero positivo, recibio {dimension_entrada!r}"
             )
-        if not 0.0 <= vigilance <= 1.0:
+        if not 0.0 <= vigilancia <= 1.0:
             raise VigilanceError(
-                f"vigilance debe estar en [0,1], recibio {vigilance!r}"
+                f"vigilancia debe estar en [0,1], recibio {vigilancia!r}"
             )
-        if not isinstance(max_clusters, int) or max_clusters <= 0:
+        if not isinstance(maximo_clusters, int) or maximo_clusters <= 0:
             raise DatasetError(
-                f"max_clusters debe ser entero positivo, recibio {max_clusters!r}"
+                f"maximo_clusters debe ser entero positivo, recibio {maximo_clusters!r}"
             )
 
-        self.n_inputs = n_inputs
-        self.vigilance = vigilance
-        self.max_clusters = max_clusters
-        self._init_weights()
+        self.dimension_entrada = dimension_entrada
+        self.vigilancia = vigilancia
+        self.maximo_clusters = maximo_clusters
+        self._inicializar_pesos()
 
-    def _init_weights(self):
-        """Inicializa las matrices de pesos (Step 1 del Box 3).
+    def _inicializar_pesos(self):
+        n, m = self.dimension_entrada, self.maximo_clusters
+        self.pesos_descendentes = [[1] * m for _ in range(n)]
+        self.pesos_ascendentes = [[1.0 / (1.0 + n)] * m for _ in range(n)]
+        self.cantidad_clusters = 0
+        self.desactivados = set()
 
-        Crea ``t_weights`` (top-down) como matriz N x M inicializada en 1
-        y ``b_weights`` (bottom-up) como matriz N x M inicializada en
-        1/(1+N). El vector de todos unos en ``t`` representa "no exemplar"
-        todavia; tras el primer match el AND con la entrada colapsa ``t``
-        al exemplar real. ``n_clusters`` arranca en 0 (sin categorias
-        creadas) y ``disabled`` como set vacio (sin clusters desactivados).
-        """
-        n, m = self.n_inputs, self.max_clusters
-        self.t_weights = [[1] * m for _ in range(n)]
-        self.b_weights = [[1.0 / (1.0 + n)] * m for _ in range(n)]
-        self.n_clusters = 0
-        self.disabled = set()
-
-    def _matching_scores(self, x):
-        """Calcula el puntaje de coincidencia de cada cluster activo (Step 3).
-
-        Implementa la formula ``mu_j = sum_i b_ij * x_i`` del Box 3:
-        cada cluster j recibe como puntaje la suma de sus pesos bottom-up
-        ``b_ij`` pesados por los bits activos de ``x``. Los clusters que
-        estan en ``self.disabled`` (fueron rechazados por vigilancia en
-        iteraciones previas de este mismo input) reciben ``-infinity``
-        para que ``argmax`` los ignore sin necesidad de filtrar la lista.
-
-        Parameters
-        ----------
-        x : list[int]
-            Vector de entrada binario de longitud ``n_inputs``.
-
-        Returns
-        -------
-        list[float]
-            Puntajes ``mu_j`` por cluster; los deshabilitados valen
-            ``-math.inf``.
-        """
-        # Step 3: mu_j = sum_i b_ij * x_i. Clusters deshabilitados => -inf.
-        # Usamos -inf (no 0 ni -1) para garantizar que NUNCA ganen el argmax
-        # aunque x tenga bits altos: es una exclusion dura, no un castigo suave.
-        scores = []
-        for j in range(self.n_clusters):
-            if j in self.disabled:
-                scores.append(-math.inf)
+    def _calcular_puntajes(self, entrada):
+        puntajes = []
+        for j in range(self.cantidad_clusters):
+            if j in self.desactivados:
+                puntajes.append(-math.inf)
             else:
-                mu = sum(self.b_weights[i][j] * x[i] for i in range(self.n_inputs))
-                scores.append(mu)
-        return scores
+                mu = sum(self.pesos_ascendentes[i][j] * entrada[i] for i in range(self.dimension_entrada))
+                puntajes.append(mu)
+        return puntajes
 
-    def _select_best(self, scores):
-        """Selecciona el cluster ganador j* por argmax (Step 4 del Box 3).
-
-        Implementacion directa del ``argmax(mu_j)``: recorre la lista de
-        puntajes y devuelve el indice del maximo. Equivalente a un MAXNET
-        con inhibicion lateral ya resuelta en una sola pasada, valido
-        porque los puntajes ya son escalares independientes por cluster.
-
-        Parameters
-        ----------
-        scores : list[float]
-            Puntajes ``mu_j`` (los deshabilitados vienen como ``-inf``).
-
-        Returns
-        -------
-        int or None
-            Indice del cluster ganador, o ``None`` si no hay candidatos
-        (lista vacia o todos en ``-inf``).
-        """
-        # Step 4: argmax via seleccion directa (equivalente a MAXNET).
-        if not scores:
+    def _seleccionar_mejor(self, puntajes):
+        if not puntajes:
             return None
-        best_j, best_mu = -1, -math.inf
-        for j, mu in enumerate(scores):
-            if mu > best_mu:
-                best_mu = mu
-                best_j = j
-        return best_j if best_j >= 0 else None
+        mejor_j, mejor_mu = -1, -math.inf
+        for j, mu in enumerate(puntajes):
+            if mu > mejor_mu:
+                mejor_mu = mu
+                mejor_j = j
+        return mejor_j if mejor_j >= 0 else None
 
-    def _vigilance_test(self, x, j_star):
-        """Test de vigilancia para el candidato j* (Step 5 del Box 3).
-
-        Computa ``phi = ||T*X|| / ||X||`` donde ``||T*X||`` es la cantidad
-        de bits del exemplar ``t_j*`` que estan prendidos en ``x`` (AND),
-        y ``||X||`` es la cantidad de bits prendidos en ``x``. Si
-        ``phi > rho`` el candidato pasa (resonancia); si no, sera
-        desactivado y se probara el siguiente argmax.
-
-        Caso borde: si ``x`` es el vector cero (``norm_x == 0``), devuelve
-        ``True`` para no atascar la red; el caller trata esos casos como
-        "entrada degenerada" de todos modos.
-
-        Parameters
-        ----------
-        x : list[int]
-            Vector de entrada binario.
-        j_star : int
-            Indice del cluster candidato a ganador.
-
-        Returns
-        -------
-        bool
-            ``True`` si ``phi > rho`` (resonancia), ``False`` si no.
-        """
-        # Step 5: ||T*X|| / ||X|| > rho.
-        # Usamos > ESTRICTO (no >=) siguiendo literalmente el Box 3 de Lau
-        # (1992). phi == rho cae en el lado del rechazo, lo cual es la
-        # interpretacion canonica del test de vigilancia.
-        norm_x = sum(x)
+    def _test_de_vigilancia(self, entrada, indice_mejor):
+        """Test de vigilancia: phi = ||T*x|| / ||x|| > rho."""
+        # > ESTRICTO (no >=) siguiendo literalmente el Box 3 de Lau (1992):
+        # phi == rho cae en el lado del rechazo.
+        norm_x = sum(entrada)
         if norm_x == 0:
             return True
-        norm_tx = sum(self.t_weights[i][j_star] * x[i] for i in range(self.n_inputs))
-        return (norm_tx / norm_x) > self.vigilance
+        norm_tx = sum(self.pesos_descendentes[i][indice_mejor] * entrada[i] for i in range(self.dimension_entrada))
+        return (norm_tx / norm_x) > self.vigilancia
 
-    def _adapt(self, x, j_star):
-        """Adapta los pesos del cluster ganador j* (Step 7 del Box 3).
-
-        Dos operaciones:
-
-        1. AND logico: ``t_ij* = t_ij* AND x_i``. Como ambos operandos son
-           0 o 1, ``t * x`` en Python produce exactamente el AND binario
-           (1*1=1, todo lo demas es 0). Esto apaga los bits del exemplar
-           que NO estaban en ``x``, reforzando solo la interseccion.
-        2. Renormalizacion: ``b_ij* = t_ij* / (0.5 + sum_k t_kj*)``. La
-           constante 0.5 en el denominador evita que un cluster con
-           exemplar muy chico (pocos bits) reciba pesos bottom-up
-           desproporcionadamente grandes, lo que lo haria ganar siempre
-           el argmax y dejaria de aprender.
-
-        Parameters
-        ----------
-        x : list[int]
-            Vector de entrada binario aceptado.
-        j_star : int
-            Indice del cluster ganador (resonancia confirmada).
-        """
-        # Step 7: t <- t AND x, b <- t / (0.5 + sum(t)).
-        # El AND colapsa el exemplar a la interseccion con x:
-        # solo sobreviven los bits prendidos en AMBOS vectores.
-        for i in range(self.n_inputs):
-            self.t_weights[i][j_star] = self.t_weights[i][j_star] * x[i]
-        norm_tx = sum(self.t_weights[i][j_star] for i in range(self.n_inputs))
-        # Denominador 0.5 + ||T*X||: la constante 0.5 estabiliza clusters
-        # pequenos para que no acaparen todos los argmax futuros.
+    def _adaptar(self, entrada, indice_mejor):
+        """Adapta los pesos del cluster ganador (Step 7: t AND x, renormalizar b)."""
+        # El AND colapsa el exemplar a la interseccion con entrada: solo
+        # sobreviven los bits prendidos en AMBOS vectores (sin AND logico no
+        # podriamos representar la operacion de generalizacion).
+        for i in range(self.dimension_entrada):
+            self.pesos_descendentes[i][indice_mejor] = self.pesos_descendentes[i][indice_mejor] * entrada[i]
+        norm_tx = sum(self.pesos_descendentes[i][indice_mejor] for i in range(self.dimension_entrada))
         denom = 0.5 + norm_tx
-        for i in range(self.n_inputs):
-            self.b_weights[i][j_star] = self.t_weights[i][j_star] / denom
+        for i in range(self.dimension_entrada):
+            self.pesos_ascendentes[i][indice_mejor] = self.pesos_descendentes[i][indice_mejor] / denom
 
-    def _create_cluster(self, x):
-        # Step 6 (caso final): exemplar es x.
-        if self.n_clusters >= self.max_clusters:
+    def _create_cluster(self, entrada):
+        if self.cantidad_clusters >= self.maximo_clusters:
             raise DatasetError(
-                f"Se alcanzo el limite max_clusters={self.max_clusters}; "
+                f"Se alcanzo el limite maximo_clusters={self.maximo_clusters}; "
                 f"no se puede crear un cluster nuevo. Suba --max-clusters "
                 f"o baje la vigilancia."
             )
-        j_new = self.n_clusters
-        norm_x = sum(x)
+        j_new = self.cantidad_clusters
+        norm_x = sum(entrada)
         denom = 0.5 + norm_x if norm_x > 0 else 1.0
-        for i in range(self.n_inputs):
-            self.t_weights[i][j_new] = int(x[i])
-            self.b_weights[i][j_new] = x[i] / denom if norm_x > 0 else 0.0
-        self.n_clusters += 1
+        for i in range(self.dimension_entrada):
+            self.pesos_descendentes[i][j_new] = int(entrada[i])
+            self.pesos_ascendentes[i][j_new] = entrada[i] / denom if norm_x > 0 else 0.0
+        self.cantidad_clusters += 1
 
-    def fit(self, X):
-        """Entrena la red ART1 sobre la matriz de entradas ``X`` (Steps 2-8).
-
-        Recorre ``X`` en orden de presentacion y, para cada vector ``x``,
-        ejecuta el ciclo completo de resonancia del Box 3 de Lau (1992).
-        Internamente reutiliza ``_matching_scores``, ``_select_best``,
-        ``_vigilance_test`` y ``_adapt``. Si tras probar todos los clusters
-        existentes ninguno pasa la vigilancia, crea un cluster nuevo con
-        ``_create_cluster``.
-
-        Diagrama del flujo por cada vector de entrada:
-
-            +---------------------------------------------------------+
-            |  Para cada vector x en X (en orden de presentacion):   |
-            |                                                         |
-            |   +-------------------------------------------------+   |
-            |   | Step 2: aplicar x                              |   |
-            |   +--------------------+---------------------------+   |
-            |                        v                               |
-            |   +-------------------------------------------------+   |
-            |   | Step 3: matching scores mu_j = sum b_ij * x_i |   |
-            |   +--------------------+---------------------------+   |
-            |                        v                               |
-            |   +-------------------------------------------------+   |
-            |   | Step 4: j* = argmax(mu_j) sobre clusters activos| |
-            |   +--------------------+---------------------------+   |
-            |                        v                               |
-            |   +-------------------------------------------------+   |
-            |   | Step 5: es ||T*X||/||X|| > rho ?               |   |
-            |   +----+--------------------------+-----------------+   |
-            |     SI |                          | NO               |
-            |        v                          v                   |
-            |   +-------------+        +------------------------+   |
-            |   | Step 7:     |        | Step 6: desactivar j*, |   |
-            |   | adaptar j*  |        | volver a Step 3        |   |
-            |   | (AND + renorm)       +------------------------+   |
-            |   +-------------+                  |                   |
-            |        |                           |                   |
-            |        |  (si no quedan clusters activos: crear nuevo) |
-            |        v                                               |
-            |   Step 8: rehabilitar disabled, siguiente input        |
-            +---------------------------------------------------------+
-
-        Parameters
-        ----------
-        X : list[list[int]]
-            Matriz de N filas, cada una un vector binario de longitud
-            ``n_inputs``.
-
-        Returns
-        -------
-        ART1
-            ``self``, para permitir encadenamiento ``net.fit(X).predict(x)``.
-
-        Raises
-        ------
-        DatasetError
-            Si ``X`` esta vacio o si alguna fila tiene longitud != ``n_inputs``.
-        BinarizationError
-            Si alguna fila contiene valores fuera de ``{0, 1}``.
-        """
-        # Loop principal: Steps 2-8.
-        if not X:
-            raise DatasetError("X esta vacio; nada que entrenar.")
-        for idx, x in enumerate(X):
-            if len(x) != self.n_inputs:
+    def entrenar(self, entradas):
+        """Entrena la red ART1 sobre la matriz de entradas (Steps 2-8)."""
+        if not entradas:
+            raise DatasetError("entradas esta vacio; nada que entrenar.")
+        for idx, entrada in enumerate(entradas):
+            if len(entrada) != self.dimension_entrada:
                 raise DatasetError(
-                    f"Fila {idx}: longitud {len(x)} != n_inputs={self.n_inputs}"
+                    f"Fila {idx}: longitud {len(entrada)} != dimension_entrada={self.dimension_entrada}"
                 )
-            if any(v not in (0, 1) for v in x):
+            if any(v not in (0, 1) for v in entrada):
                 raise BinarizationError(
-                    f"Fila {idx}: contiene valores no binarios {set(v for v in x if v not in (0,1))}"
+                    f"Fila {idx}: contiene valores no binarios {set(v for v in entrada if v not in (0,1))}"
                 )
-            # Step 8: rehabilitar clusters (cada input empieza limpio).
-            self.disabled.clear()
-            # Entrada degenerada (sum=0): crear cluster zero y seguir.
-            if sum(x) == 0:
-                self._create_cluster(x)
+            self.desactivados.clear()
+            if sum(entrada) == 0:
+                self._create_cluster(entrada)
                 continue
-            # Loop Steps 3-6.
             while True:
-                scores = self._matching_scores(x)
-                j_star = self._select_best(scores)
+                puntajes = self._calcular_puntajes(entrada)
+                indice_mejor = self._seleccionar_mejor(puntajes)
                 # Fallback del Step 6: si todos los clusters activos fueron
-                # rechazados por vigilancia, j_star viene como None y la
-                # unica opcion es crear un cluster nuevo con x como exemplar.
-                # Esto es la cara "plasticidad" de ART1: el sistema admite
-                # categorias que no encajan en ningun cluster previo.
-                if j_star is None:
-                    self._create_cluster(x)
+                # rechazados por vigilancia, indice_mejor viene como None y la
+                # unica opcion es crear un cluster nuevo con entrada como
+                # exemplar (cara "plasticidad" de ART1).
+                if indice_mejor is None:
+                    self._create_cluster(entrada)
                     break
-                if self._vigilance_test(x, j_star):
-                    self._adapt(x, j_star)
+                if self._test_de_vigilancia(entrada, indice_mejor):
+                    self._adaptar(entrada, indice_mejor)
                     break
-                # Step 6: deshabilitar j* y volver a Step 3.
-                self.disabled.add(j_star)
+                self.desactivados.add(indice_mejor)
         return self
 
-    def predict(self, x):
-        """Clasifica ``x`` contra los clusters existentes (paso de inferencia).
-
-        Recorre todos los clusters ya entrenados, calcula ``mu_j`` para
-        cada uno y se queda con el argmax. Luego devuelve tambien el
-        ``match_score = ||T*X|| / ||X||`` para esa asignacion, que es la
-        proporcion de bits del exemplar que encendieron con ``x``.
-
-        A diferencia de ``fit``, ``predict`` NO aplica el test de vigilancia:
-        la categoria ya fue creada, asi que un input se asigna al cluster
-        mas cercano aunque la coincidencia sea pobre.
-
-        Parameters
-        ----------
-        x : list[int]
-            Vector de entrada binario de longitud ``n_inputs``.
-
-        Returns
-        -------
-        tuple[int, float]
-            ``(cluster_id, match_score)``. ``cluster_id`` es 0-indexed y
-            ``match_score = ||T*X|| / ||X||`` redondeado a 3 decimales
-            por el caller.
-
-        Raises
-        ------
-        DatasetError
-            Si ``len(x) != n_inputs``.
-        """
-        if self.n_clusters == 0:
-            # -1 es la senal convencional de "no hay clasificacion posible"
-            # (la red aun no fue entrenada). El caller lo distingue de un
-            # cluster real (>=0) revisando el signo.
+    def predecir(self, entrada):
+        if self.cantidad_clusters == 0:
             return (-1, 0.0)
-        if len(x) != self.n_inputs:
+        if len(entrada) != self.dimension_entrada:
             raise DatasetError(
-                f"predict: longitud {len(x)} != n_inputs={self.n_inputs}"
+                f"predecir: longitud {len(entrada)} != dimension_entrada={self.dimension_entrada}"
             )
-        norm_x = sum(x)
+        norm_x = sum(entrada)
         if norm_x == 0:
             return (0, 0.0)
         best_j, best_mu = -1, -math.inf
-        for j in range(self.n_clusters):
-            mu = sum(self.b_weights[i][j] * x[i] for i in range(self.n_inputs))
+        for j in range(self.cantidad_clusters):
+            mu = sum(self.pesos_ascendentes[i][j] * entrada[i] for i in range(self.dimension_entrada))
             if mu > best_mu:
                 best_mu = mu
                 best_j = j
-        norm_tx = sum(self.t_weights[i][best_j] * x[i] for i in range(self.n_inputs))
+        norm_tx = sum(self.pesos_descendentes[i][best_j] * entrada[i] for i in range(self.dimension_entrada))
         return (best_j, norm_tx / norm_x)
 
-    def get_exemplars(self):
-        """Devuelve la lista de exemplares activos, uno por cluster.
-
-        El exemplar del cluster j es la columna ``t_weights[:, j]``:
-        el vector binario que resulta de aplicar sucesivos AND con los
-        inputs que resonaron en ese cluster. Es el prototipo de la
-        categoria.
-
-        Returns
-        -------
-        list[list[int]]
-            Lista de ``n_clusters`` vectores binarios, cada uno de
-            longitud ``n_inputs``.
-        """
+    def obtener_exemplares(self):
         return [
-            [self.t_weights[i][j] for i in range(self.n_inputs)]
-            for j in range(self.n_clusters)
+            [self.pesos_descendentes[i][j] for i in range(self.dimension_entrada)]
+            for j in range(self.cantidad_clusters)
         ]
 
 
@@ -516,46 +250,9 @@ _ID_COLUMNS = {"id", "sensor_id"}
 
 class DataLoader:
     """Carga un CSV de features continuas y lo binariza segun el metadata.
-
-    Separa la I/O de la red: la red ART1 trabaja solo con vectores
-    binarios, asi que toda la conversion continuo -> binario vive aqui.
-
-    Formato del CSV de entrada
-    --------------------------
-    Un header con una columna ID (cuyo nombre debe ser ``id`` o
-    ``sensor_id``) y el resto son features continuas numericas. Ejemplo::
-
-        id,edad,presion,colesterol
-        1,55,140,210
-        2,30,120,180
-
-    Formato del metadata CSV
-    -------------------------
-    Header obligatorio: ``dataset, feature, threshold, rule``. Se filtran
-    las filas cuya columna ``dataset`` coincide con el ``stem`` del CSV
-    de entrada (ej. ``dataset1_pacientes``). El resto define como
-    binarizar cada feature:
-
-    - ``feature``:  nombre de la columna en el CSV de entrada.
-    - ``threshold`` (float): umbral de decision.
-    - ``rule``: uno de ``gte``, ``lte``, ``gt``, ``lt``
-      (mayor-igual, menor-igual, mayor, menor contra el umbral).
-
-    Proceso de binarizacion
-    -----------------------
-    Para cada celda ``(fila, columna)`` se aplica la regla del metadata
-    correspondiente y se emite 1 o 0. Si una feature tiene multiples
-    reglas en el metadata (por ejemplo ``edad >= 50`` y ``edad >= 70``),
-    se aplican en orden y se concatenan los bits, expandiendo la
-    dimension efectiva del vector.
-
-    Attributes
-    ----------
-    csv_path : Path
-        Ruta al CSV de features continuas.
-    metadata_path : Path or None
-        Ruta al metadata CSV. Si es ``None``, ``load_and_binarize``
-        lanzara ``MetadataError``.
+    El header debe tener una columna ID (``id`` o ``sensor_id``) y el resto
+    son features numericas. El metadata CSV define las reglas de binarizacion
+    (threshold + rule: gte/lte/gt/lt) por feature.
     """
 
     def __init__(self, csv_path, metadata_path=None):
@@ -621,7 +318,6 @@ class DataLoader:
                 f"No existe CSV de entrada: {self.csv_path}"
             )
         metadata = self.load_metadata()
-        # Reglas agrupadas por feature (orden estable segun metadata).
         rules_by_feature = {}
         for entry in metadata:
             rules_by_feature.setdefault(entry["feature"], []).append(entry)
@@ -754,8 +450,7 @@ REFERENCIAS
 """
 
 
-def _print_manual():
-    """Imprime el manual extendido (modo ``--man``) a stdout."""
+def _imprimir_manual():
     print(_MANUAL)
 
 
@@ -763,29 +458,22 @@ def _print_manual():
 # Smoke test
 # ---------------------------------------------------------------------------
 
-def _run_smoke_test():
-    """Ejecuta el smoke test sobre ``dataset1_pacientes.csv`` con rho=0.6.
-
-    Carga el dataset canonico, entrena la red y verifica que produzca
-    al menos un cluster y que ``predict`` asigne IDs validos a todas
-    las filas. Imprime ``TEST PASSED`` o ``TEST FAILED: <razon>``.
-    Sirve como regresion rapida: si falla, el modulo entero esta roto.
-    """
+def _ejecutar_smoke_test():
     here = Path(__file__).resolve().parent
     project_root = here.parent
     csv_path = project_root / "data" / "dataset1_pacientes.csv"
     meta_path = project_root / "data" / "metadata.csv"
     try:
         loader = DataLoader(csv_path, meta_path)
-        row_ids, X = loader.load_and_binarize()
-        net = ART1(n_inputs=len(X[0]), vigilance=0.6)
-        net.fit(X)
-        if net.n_clusters < 1:
-            print(f"TEST FAILED: n_clusters={net.n_clusters} (esperaba >=1)")
+        row_ids, entradas = loader.load_and_binarize()
+        net = ART1(dimension_entrada=len(entradas[0]), vigilancia=0.6)
+        net.entrenar(entradas)
+        if net.cantidad_clusters < 1:
+            print(f"TEST FAILED: cantidad_clusters={net.cantidad_clusters} (esperaba >=1)")
             return
-        for idx, x in enumerate(X):
-            j, _ = net.predict(x)
-            if j < 0 or j >= net.n_clusters:
+        for idx, entrada in enumerate(entradas):
+            j, _ = net.predecir(entrada)
+            if j < 0 or j >= net.cantidad_clusters:
                 print(f"TEST FAILED: fila {idx} (id={row_ids[idx]}) sin cluster valido (j={j})")
                 return
         print("TEST PASSED")
@@ -797,8 +485,7 @@ def _run_smoke_test():
 # Salida
 # ---------------------------------------------------------------------------
 
-def _write_csv_output(path, row_ids, results):
-    """Escribe el CSV de salida con ``id, cluster, match_score`` por fila."""
+def _escribir_salida_csv(path, row_ids, results):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as fh:
@@ -808,31 +495,28 @@ def _write_csv_output(path, row_ids, results):
             writer.writerow([rid, cluster, f"{score:.3f}"])
 
 
-def _cluster_members(row_ids, results):
-    """Agrupa los IDs por cluster: ``{cluster_id: [ids...]}``."""
+def _miembros_del_cluster(row_ids, results):
     members = {}
     for rid, (cluster, _) in zip(row_ids, results):
         members.setdefault(cluster, []).append(rid)
     return members
 
 
-def _format_exemplar(ex):
-    """Formatea un exemplar binario como ``[0 1 1 0 1]`` para el TXT."""
+def _formatear_exemplar(ex):
     return "[" + " ".join(str(b) for b in ex) + "]"
 
 
-def _write_txt_output(path, args, net, row_ids, results, feature_count):
-    """Escribe el TXT legible con resumen, clusters, exemplares e IDs."""
+def _escribir_salida_txt(path, args, net, row_ids, results, feature_count):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    members = _cluster_members(row_ids, results)
-    exemplars = net.get_exemplars()
+    members = _miembros_del_cluster(row_ids, results)
+    exemplars = net.obtener_exemplares()
     n_assigned = sum(1 for _, (c, _) in zip(row_ids, results) if c >= 0)
     avg_score = (
         sum(s for _, (_, s) in zip(row_ids, results) if s is not None) / len(results)
         if results else 0.0
     )
-    total_created = net.n_clusters
+    total_created = net.cantidad_clusters
     nonempty_clusters = [j for j in range(total_created) if len(members.get(j, [])) > 0]
     skipped = total_created - len(nonempty_clusters)
     with path.open("w", encoding="utf-8") as fh:
@@ -861,55 +545,32 @@ def _write_txt_output(path, args, net, row_ids, results, feature_count):
             mean_s = (sum(scores) / len(scores)) if scores else 0.0
             fh.write(f"Cluster {j}\n")
             fh.write(f"  Tamano:    {len(ids)}\n")
-            fh.write(f"  Exemplar:  {_format_exemplar(exemplars[j])}\n")
+            fh.write(f"  Exemplar:  {_formatear_exemplar(exemplars[j])}\n")
             fh.write(f"  Score med: {mean_s:.3f}\n")
             fh.write(f"  IDs:       {', '.join(ids)}\n\n")
         fh.write("Referencia algoritmica: Box 3, Lau (1992) pp. 12-14.\n")
         fh.write("Ver _legacy/CarGross_TP/lau_contenido.md para la transcripcion completa.\n")
 
 
-def _run_shuffle(net_factory, X, n_runs, base_seed):
-    """Entrena N veces con orden aleatorio y mide estabilidad.
-
-    "Pairwise agreement vs run 0" significa: para cada corrida i > 0,
-    contamos cuantas filas quedaron en el mismo cluster que en la corrida
-    0 (tomada como baseline). El promedio sobre i = 1..N-1 da una
-    fraccion en [0,1] que indica que tan estable es la asignacion de
-    clusters frente al orden de presentacion.
-
-    Cada corrida usa la misma semilla base + el avance del RNG, asi que
-    es reproducible. ``net_factory`` es un callable que devuelve una red
-    ART1 fresca para que cada corrida arranque con los mismos pesos
-    iniciales (t=1, b=1/(1+N)) y solo cambie el orden de ``X``.
-
-    Returns
-    -------
-    tuple[float, float, list[int]]
-        ``(media_clusters, acuerdo_medio, lista_de_clusters_por_run)``.
-    """
+def _ejecutar_barajado(net_factory, entradas, n_runs, base_seed):
     rng = random.Random(base_seed)
     base_assignment = None
     agreements = []
     cluster_counts = []
     for _ in range(n_runs):
-        indices = list(range(len(X)))
+        indices = list(range(len(entradas)))
         rng.shuffle(indices)
-        X_shuf = [X[i] for i in indices]
+        entradas_shuf = [entradas[i] for i in indices]
         net = net_factory()
-        net.fit(X_shuf)
-        cluster_counts.append(net.n_clusters)
-        # Reordenar asignaciones al orden original.
-        shuffled_assign = [net.predict(x)[0] for x in X_shuf]
-        assign = [0] * len(X)
+        net.entrenar(entradas_shuf)
+        cluster_counts.append(net.cantidad_clusters)
+        shuffled_assign = [net.predecir(entrada)[0] for entrada in entradas_shuf]
+        assign = [0] * len(entradas)
         for new_idx, old_idx in enumerate(indices):
             assign[old_idx] = shuffled_assign[new_idx]
         if base_assignment is None:
-            # La primera corrida define la baseline de asignaciones.
-            # Las siguientes se comparan con esta, NO entre si, para
-            # obtener un numero de "estabilidad absoluta" reproducible.
             base_assignment = assign
         else:
-            # Cuenta de filas que mantienen el mismo cluster_id que run 0.
             agree = sum(1 for a, b in zip(assign, base_assignment) if a == b)
             agreements.append(agree / len(assign))
     mean_clusters = sum(cluster_counts) / len(cluster_counts) if cluster_counts else 0.0
@@ -921,8 +582,7 @@ def _run_shuffle(net_factory, X, n_runs, base_seed):
 # CLI
 # ---------------------------------------------------------------------------
 
-def _build_parser():
-    """Construye el ``ArgumentParser`` con todas las opciones de la CLI."""
+def _construir_parser():
     p = argparse.ArgumentParser(
         prog="CarGross",
         description="Clustering no supervisado con ART1 (Carpenter-Grossberg, 1987).",
@@ -949,62 +609,44 @@ def _build_parser():
 
 
 def main(argv=None):
-    """Punto de entrada de la CLI. Orquesta carga, fit, predict y salida.
-
-    Flujo:
-
-    1. Parsea argumentos (``_build_parser``).
-    2. Si ``--man``: imprime manual y sale.
-    3. Si ``--test``: corre smoke test y sale.
-    4. Carga el CSV + metadata via ``DataLoader`` y binariza.
-    5. Entrena ``ART1`` sobre la matriz binaria.
-    6. Predice para cada fila y emite CSV (``_write_csv_output``) y TXT
-       (``_write_txt_output``).
-    7. Si ``--shuffle N``: ejecuta ``_run_shuffle`` y reporta estabilidad.
-
-    Los errores especificos del modulo (``CarGrossError`` y derivados)
-    se imprimen a stderr con exit code 1; cualquier otra excepcion se
-    considera bug y sale con exit code 2.
-    """
-    parser = _build_parser()
+    parser = _construir_parser()
     args = parser.parse_args(argv)
     if args.man:
-        _print_manual()
+        _imprimir_manual()
         return
     if args.test:
-        _run_smoke_test()
+        _ejecutar_smoke_test()
         return
     if not args.csv_file:
         parser.error("csv_file es obligatorio (o usa --man / --test).")
     try:
         loader = DataLoader(Path(args.csv_file), Path(args.metadata))
-        row_ids, X = loader.load_and_binarize()
-        feature_count = len(X[0])
+        row_ids, entradas = loader.load_and_binarize()
+        feature_count = len(entradas[0])
         if args.verbose:
             print(f"[INFO] Cargadas {len(row_ids)} filas, {feature_count} features binarias.")
             print(f"[INFO] Metadata: {args.metadata}")
         net = ART1(
-            n_inputs=feature_count,
-            vigilance=args.vigilance,
-            max_clusters=args.max_clusters,
+            dimension_entrada=feature_count,
+            vigilancia=args.vigilance,
+            maximo_clusters=args.max_clusters,
         )
-        net.fit(X)
-        results = [net.predict(x) for x in X]
-        _write_csv_output(args.output, row_ids, results)
-        _write_txt_output(args.save_txt, args, net, row_ids, results, feature_count)
+        net.entrenar(entradas)
+        results = [net.predecir(entrada) for entrada in entradas]
+        _escribir_salida_csv(args.output, row_ids, results)
+        _escribir_salida_txt(args.save_txt, args, net, row_ids, results, feature_count)
         if args.verbose:
-            print(f"[INFO] Clusters formados: {net.n_clusters}")
+            print(f"[INFO] Clusters formados: {net.cantidad_clusters}")
             print(f"[INFO] CSV: {args.output}")
             print(f"[INFO] TXT: {args.save_txt}")
-        # Bloque de shuffle si se pidio.
         if args.shuffle and args.shuffle > 0:
-            mean_c, mean_a, counts = _run_shuffle(
+            mean_c, mean_a, counts = _ejecutar_barajado(
                 net_factory=lambda: ART1(
-                    n_inputs=feature_count,
-                    vigilance=args.vigilance,
-                    max_clusters=args.max_clusters,
+                    dimension_entrada=feature_count,
+                    vigilancia=args.vigilance,
+                    maximo_clusters=args.max_clusters,
                 ),
-                X=X,
+                entradas=entradas,
                 n_runs=args.shuffle,
                 base_seed=args.seed,
             )
