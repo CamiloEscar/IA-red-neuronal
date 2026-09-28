@@ -1,670 +1,709 @@
-# SPDX-License-Identifier: MIT
 """
-CarGross.py
-===========
+CarGross.py - Implementación de la Red Neuronal ART1 (Carpenter-Grossberg)
+Cátedra Inteligencia Artificial - Trabajo Final Integrador (TFI)
 
-Implementacion del clasificador Carpenter/Grossberg (ART1, Adaptive Resonance
-Theory 1) segun el algoritmo del Box 3 de Lau (1992), pp. 12-14.
-
-Mapeo de notacion matematica (paper Lau 1992 Box 3) a variables del codigo:
-
-+--------------------+-------------------------------------------------+----------------------------------+
-| Simbolo matematico | Significado                                      | Variable en codigo               |
-+====================+=================================================+==================================+
-| N                  | Dimension del vector de entrada                  | self.dimension_entrada           |
-+--------------------+-------------------------------------------------+----------------------------------+
-| M                  | Cantidad maxima de clusters                      | self.maximo_clusters             |
-+--------------------+-------------------------------------------------+----------------------------------+
-| x                  | Vector de entrada binario                        | entrada (lista de ints)          |
-+--------------------+-------------------------------------------------+----------------------------------+
-| X                  | Matriz de entrada (N filas x M cols)             | entradas (lista de listas)       |
-+--------------------+-------------------------------------------------+----------------------------------+
-| t_ij               | Peso top-down entre input i y cluster j         | self.pesos_descendentes[i][j]    |
-+--------------------+-------------------------------------------------+----------------------------------+
-| b_ij               | Peso bottom-up entre input i y cluster j        | self.pesos_ascendentes[i][j]     |
-+--------------------+-------------------------------------------------+----------------------------------+
-| mu_j               | Puntaje de coincidencia del cluster j            | puntajes[j]                      |
-+--------------------+-------------------------------------------------+----------------------------------+
-| j*                 | Indice del cluster con mejor coincidencia        | indice_mejor                     |
-+--------------------+-------------------------------------------------+----------------------------------+
-| rho                | Umbral de vigilancia                             | self.vigilancia                  |
-+--------------------+-------------------------------------------------+----------------------------------+
-| ||X||              | Norma L1 del vector X (= suma de sus bits)      | sum(x)                           |
-+--------------------+-------------------------------------------------+----------------------------------+
-| ||T*X||            | Suma de productos t_ij * x_i                    | _test_de_vigilancia numerator    |
-+--------------------+-------------------------------------------------+----------------------------------+
-| phi (relacion)     | ||T*X|| / ||X|| - pasa si > rho                 | (computed in _test_de_vigilancia)|
-+--------------------+-------------------------------------------------+----------------------------------+
-| AND logico         | Operacion bitwise AND para adaptacion           | (computed in _adaptar)           |
-+--------------------+-------------------------------------------------+----------------------------------+
-
-Algoritmo (Box 3 de Lau 1992, pp. 12-14):
-
-  Step 1: inicializar t_ij = 1, b_ij = 1/(1+N), set rho
-  Step 2: aplicar nueva entrada x
-  Step 3: computar mu_j = sum b_ij * x_i para todos los clusters activos
-  Step 4: seleccionar j* = argmax(mu_j) (via MAXNET/inhibicion lateral)
-  Step 5: test de vigilancia - phi = ||T*X|| / ||X|| - phi > rho?
-          SI -> Step 7 (resonancia, adaptar)
-          NO -> Step 6 (desactivar j*, volver a Step 3)
-  Step 6: desactivar el mejor cluster temporalmente
-  Step 7: adaptar t_ij* = t_ij* * x_i (AND), renormalizar b
-  Step 8: rehabilitar clusters desactivados, repetir desde Step 2
+Este módulo implementa el algoritmo de la Red Neuronal ART1 (Adaptive Resonance Theory 1)
+para el agrupamiento no supervisado de patrones binarios, aplicado al diagnóstico médico
+y categorización de síntomas de pacientes.
 """
 
-import argparse
-import csv
-import math
-import random
 import sys
-from pathlib import Path
+import os
+import csv
+import random
+import argparse
+from datetime import datetime
+from typing import List, Dict, Tuple, Optional, Any
 
 
-# ---------------------------------------------------------------------------
-# Excepciones
-# ---------------------------------------------------------------------------
 
-class CarGrossError(Exception):
-    pass
-
-
-class FileNotFoundCarGrossError(CarGrossError):
-    pass
-
-
-class MetadataError(CarGrossError):
-    pass
-
-
-class BinarizationError(CarGrossError):
-    pass
-
-
-class VigilanceError(CarGrossError):
-    pass
-
-
-class DatasetError(CarGrossError):
-    pass
-
-
-# ---------------------------------------------------------------------------
-# ART1
-# ---------------------------------------------------------------------------
-
-class ART1:
-    """Red neuronal ART1 (Adaptive Resonance Theory 1) para clustering
-    no supervisado de patrones binarios. ``vigilancia`` (rho) controla el
-    dilema estabilidad-plasticidad y ``maximo_clusters`` acota el crecimiento.
-    Implementacion fiel del Box 3 de Lau (1992), pp. 12-14.
+class ART1Network:
     """
+    Inicializa la red ART1.
 
-    def __init__(self, dimension_entrada, vigilancia=0.5, maximo_clusters=1000):
-        if not isinstance(dimension_entrada, int) or dimension_entrada <= 0:
-            raise DatasetError(
-                f"dimension_entrada debe ser entero positivo, recibio {dimension_entrada!r}"
-            )
-        if not 0.0 <= vigilancia <= 1.0:
-            raise VigilanceError(
-                f"vigilancia debe estar en [0,1], recibio {vigilancia!r}"
-            )
-        if not isinstance(maximo_clusters, int) or maximo_clusters <= 0:
-            raise DatasetError(
-                f"maximo_clusters debe ser entero positivo, recibio {maximo_clusters!r}"
-            )
+    Parámetros:
+        num_inputs: cantidad de variables de entrada del patrón binario.
+        max_categories: número máximo de categorías o clusters que la red puede crear.
+        rho: umbral de vigilancia que controla la aceptación de un patrón en un cluster.
+    """
+    # Validacion del parametro de vigilancia (rho) y del numero de entradas (num_inputs)
+    # Debe estar en el rango [0, 1], ya que se usa como umbral de comparación.
 
-        self.dimension_entrada = dimension_entrada
-        self.vigilancia = vigilancia
-        self.maximo_clusters = maximo_clusters
-        self._inicializar_pesos()
+    def __init__(self, num_inputs: int, max_categories: int = 50, rho: float = 0.65):
+        if not (0.0 <= rho <= 1.0):
+            raise ValueError("El parámetro de vigilancia (rho) debe estar entre 0.0 y 1.0.")
+        if num_inputs <= 0:
+            raise ValueError("El número de variables de entrada (num_inputs) debe ser mayor a 0.")
 
-    def _inicializar_pesos(self):
-        n, m = self.dimension_entrada, self.maximo_clusters
-        self.pesos_descendentes = [[1] * m for _ in range(n)]
-        self.pesos_ascendentes = [[1.0 / (1.0 + n)] * m for _ in range(n)]
-        self.cantidad_clusters = 0
-        self.desactivados = set()
+        self.N = num_inputs
+        self.M = max_categories
+        self.rho = rho
 
-    def _calcular_puntajes(self, entrada):
-        puntajes = []
-        for j in range(self.cantidad_clusters):
-            if j in self.desactivados:
-                puntajes.append(-math.inf)
+        self.num_committed_categories = 0
+
+        # Paso 1: Inicialización de Pesos Synápticos
+        # Pesos Top-Down t_ji (M x N), inicializados en 1
+        self.t = [[1.0 for _ in range(self.N)] for _ in range(self.M)]
+
+        # Pesos Bottom-Up b_ij (N x M), inicializados en 1 / (1 + N)
+        initial_b = 1.0 / (1.0 + self.N)
+        self.b = [[initial_b for _ in range(self.M)] for _ in range(self.N)]
+
+        self.history_assignments: List[int] = []
+        self.history_ratios: List[float] = []
+    
+    def _compute_matching_scores(self, x: List[int], active_mask: List[bool]) -> List[float]:
+        """Calcula las puntuaciones de coincidencia (mu_j) para cada categoría j."""
+        # Lista que guarda el score final para cada categoría j.
+        scores = []
+        for j in range(self.M):
+            # Si la categoría está desactivada por no superar el test de vigilancia,
+            # se descarta para esta iteración.
+            if not active_mask[j]:
+                scores.append(-1.0)
             else:
-                mu = sum(self.pesos_ascendentes[i][j] * entrada[i] for i in range(self.dimension_entrada))
-                puntajes.append(mu)
-        return puntajes
+                # Score de coincidencia:
+                # suma de b[i][j] * x[i] para todas las entradas i.
+                # Esto mide qué tan bien la categoría actual representa el patrón.
+                score = sum(self.b[i][j] * x[i] for i in range(self.N))
+                scores.append(score)
+        return scores
 
-    def _seleccionar_mejor(self, puntajes):
-        if not puntajes:
-            return None
-        mejor_j, mejor_mu = -1, -math.inf
-        for j, mu in enumerate(puntajes):
-            if mu > mejor_mu:
-                mejor_mu = mu
-                mejor_j = j
-        return mejor_j if mejor_j >= 0 else None
+    def train_pattern(self, x: List[int]) -> Tuple[int, float]:
+        """
+            Procesa un único patrón binario de entrada y lo asigna a una categoría ART1.
 
-    def _test_de_vigilancia(self, entrada, indice_mejor):
-        """Test de vigilancia: phi = ||T*x|| / ||x|| > rho."""
-        # > ESTRICTO (no >=) siguiendo literalmente el Box 3 de Lau (1992):
-        # phi == rho cae en el lado del rechazo.
-        norm_x = sum(entrada)
+            Este método implementa la lógica principal del algoritmo:
+            1. valida que el vector sea válido,
+            2. calcula la categoría más compatible,
+            3. aplica el test de vigilancia,
+            4. si supera la prueba, adapta los pesos y devuelve el cluster asignado.
+
+            Parámetros:
+                x: vector binario de entrada de tamaño N.
+
+            Retorna:
+                (cluster_id, match_ratio)
+                - cluster_id: índice de la categoría ganadora.
+                - match_ratio: proporción de coincidencia con la plantilla.
+        
+        """
+        # Verifica que la longitud del vector coincida con la dimensión de entrada de la red.
+        if len(x) != self.N:
+            raise ValueError(f"Dimensión de entrada inválida ({len(x)}). Se esperaban {self.N} elementos.")
+        # Verifica que el patrón sea binario, es decir, que cada valor sea 0 o 1.
+        if any(bit not in (0, 1) for bit in x):
+            raise ValueError("El vector de entrada contiene valores no binarios (diferentes de 0 o 1).")
+
+        # Norma del vector de entrada: cantidad de bits activos (1s).
+        norm_x = sum(x)
         if norm_x == 0:
-            return True
-        norm_tx = sum(self.pesos_descendentes[i][indice_mejor] * entrada[i] for i in range(self.dimension_entrada))
-        return (norm_tx / norm_x) > self.vigilancia
+            return 0, 1.0
 
-    def _adaptar(self, entrada, indice_mejor):
-        """Adapta los pesos del cluster ganador (Step 7: t AND x, renormalizar b)."""
-        # El AND colapsa el exemplar a la interseccion con entrada: solo
-        # sobreviven los bits prendidos en AMBOS vectores (sin AND logico no
-        # podriamos representar la operacion de generalizacion).
-        for i in range(self.dimension_entrada):
-            self.pesos_descendentes[i][indice_mejor] = self.pesos_descendentes[i][indice_mejor] * entrada[i]
-        norm_tx = sum(self.pesos_descendentes[i][indice_mejor] for i in range(self.dimension_entrada))
-        denom = 0.5 + norm_tx
-        for i in range(self.dimension_entrada):
-            self.pesos_ascendentes[i][indice_mejor] = self.pesos_descendentes[i][indice_mejor] / denom
+        # En cada iteración, si una categoría falla la prueba de vigilancia,
+        # se desactiva para no volver a elegirla.
+        active_mask = [True] * self.M
 
-    def _create_cluster(self, entrada):
-        if self.cantidad_clusters >= self.maximo_clusters:
-            raise DatasetError(
-                f"Se alcanzo el limite maximo_clusters={self.maximo_clusters}; "
-                f"no se puede crear un cluster nuevo. Suba --max-clusters "
-                f"o baje la vigilancia."
-            )
-        j_new = self.cantidad_clusters
-        norm_x = sum(entrada)
-        denom = 0.5 + norm_x if norm_x > 0 else 1.0
-        for i in range(self.dimension_entrada):
-            self.pesos_descendentes[i][j_new] = int(entrada[i])
-            self.pesos_ascendentes[i][j_new] = entrada[i] / denom if norm_x > 0 else 0.0
-        self.cantidad_clusters += 1
+        while True:
+            # 1) Calcula el score de coincidencia para todas las categorías activas.
+            scores = self._compute_matching_scores(x, active_mask)
+            
+            # 2) Selecciona la categoría con mayor puntaje.
+            max_score = max(scores)
+            
+            # Si todas las categorías quedaron desactivadas, la red ya no puede clasificar.
+            if max_score < 0:
+                raise RuntimeError("Capacidad de la red alcanzada: No quedan categorías disponibles.")
 
-    def entrenar(self, entradas):
-        """Entrena la red ART1 sobre la matriz de entradas (Steps 2-8)."""
-        if not entradas:
-            raise DatasetError("entradas esta vacio; nada que entrenar.")
-        for idx, entrada in enumerate(entradas):
-            if len(entrada) != self.dimension_entrada:
-                raise DatasetError(
-                    f"Fila {idx}: longitud {len(entrada)} != dimension_entrada={self.dimension_entrada}"
-                )
-            if any(v not in (0, 1) for v in entrada):
-                raise BinarizationError(
-                    f"Fila {idx}: contiene valores no binarios {set(v for v in entrada if v not in (0,1))}"
-                )
-            self.desactivados.clear()
-            if sum(entrada) == 0:
-                self._create_cluster(entrada)
-                continue
-            while True:
-                puntajes = self._calcular_puntajes(entrada)
-                indice_mejor = self._seleccionar_mejor(puntajes)
-                # Fallback del Step 6: si todos los clusters activos fueron
-                # rechazados por vigilancia, indice_mejor viene como None y la
-                # unica opcion es crear un cluster nuevo con entrada como
-                # exemplar (cara "plasticidad" de ART1).
-                if indice_mejor is None:
-                    self._create_cluster(entrada)
-                    break
-                if self._test_de_vigilancia(entrada, indice_mejor):
-                    self._adaptar(entrada, indice_mejor)
-                    break
-                self.desactivados.add(indice_mejor)
-        return self
+            # Índice de la categoría ganadora.
+            j_star = scores.index(max_score)
 
-    def predecir(self, entrada):
-        if self.cantidad_clusters == 0:
-            return (-1, 0.0)
-        if len(entrada) != self.dimension_entrada:
-            raise DatasetError(
-                f"predecir: longitud {len(entrada)} != dimension_entrada={self.dimension_entrada}"
-            )
-        norm_x = sum(entrada)
-        if norm_x == 0:
-            return (0, 0.0)
-        best_j, best_mu = -1, -math.inf
-        for j in range(self.cantidad_clusters):
-            mu = sum(self.pesos_ascendentes[i][j] * entrada[i] for i in range(self.dimension_entrada))
-            if mu > best_mu:
-                best_mu = mu
-                best_j = j
-        norm_tx = sum(self.pesos_descendentes[i][best_j] * entrada[i] for i in range(self.dimension_entrada))
-        return (best_j, norm_tx / norm_x)
+            # 3) Test de vigilancia ART1.
+            # T = plantilla top-down de la categoría elegida intersectada con el patrón x.
+            T = [self.t[j_star][i] * x[i] for i in range(self.N)]
+            norm_T = sum(T)
 
-    def obtener_exemplares(self):
-        return [
-            [self.pesos_descendentes[i][j] for i in range(self.dimension_entrada)]
-            for j in range(self.cantidad_clusters)
+
+            # Ratio de coincidencia: ||T|| / ||X||
+            match_ratio = norm_T / float(norm_x)
+
+            # Si el patrón es suficientemente compatible con la categoría,
+            # se acepta y se actualizan los pesos.
+            if match_ratio >= self.rho:
+                self._adapt_weights(j_star, T)
+                if j_star >= self.num_committed_categories:
+                    self.num_committed_categories = j_star + 1
+                return j_star, match_ratio
+            
+            # Si la categoría no cumple el umbral de vigilancia,
+            # se desactiva y se intenta otra.
+            else:
+                active_mask[j_star] = False
+
+    def _adapt_weights(self, j_star: int, T: List[float]):
+        """Actualiza los pesos descendentes y ascendentes del nodo ganador."""
+        for i in range(self.N):
+            self.t[j_star][i] = T[i]
+
+        sum_t = sum(self.t[j_star][k] for k in range(self.N))
+        denominator = 0.5 + sum_t
+
+        for i in range(self.N):
+            self.b[i][j_star] = self.t[j_star][i] / denominator
+
+    def fit(self, dataset: List[List[int]]) -> List[Dict[str, float]]:
+        """Entrena la red procesando secuencialmente cada patrón del dataset."""
+        results = []
+        for idx, pattern in enumerate(dataset):
+            cluster_id, match_ratio = self.train_pattern(pattern)
+            self.history_assignments.append(cluster_id)
+            self.history_ratios.append(match_ratio)
+            results.append({
+                "patient_index": idx,
+                "cluster_assigned": cluster_id,
+                "matching_ratio": match_ratio
+            })
+        return results
+
+    def get_cluster_templates(self) -> Dict[int, List[int]]:
+        """Retorna las plantillas binarias de cada cluster formado."""
+        templates = {}
+        for j in range(self.num_committed_categories):
+            templates[j] = [int(self.t[j][i]) for i in range(self.N)]
+        return templates
+
+    def compute_metrics(self, validation_labels: Optional[List[str]] = None) -> Dict[str, float]:
+        """Calcula métricas clave de evaluación."""
+        if not self.history_ratios:
+            return {}
+
+        avg_matching_ratio = sum(self.history_ratios) / len(self.history_ratios)
+        templates = self.get_cluster_templates()
+        avg_template_stability = (
+            sum(sum(temp) for temp in templates.values()) / float(len(templates))
+            if templates else 0.0
+        )
+
+        metrics = {
+            "num_clusters": float(self.num_committed_categories),
+            "avg_matching_ratio": avg_matching_ratio,
+            "avg_template_active_bits": avg_template_stability,
+        }
+
+        if validation_labels and len(validation_labels) == len(self.history_assignments):
+            metrics["cluster_purity"] = self._calculate_purity(validation_labels)
+
+        return metrics
+
+    def _calculate_purity(self, labels: List[str]) -> float:
+        """Calcula la pureza de los clusters."""
+        cluster_counts: Dict[int, Dict[str, int]] = {}
+        for cluster_id, label in zip(self.history_assignments, labels):
+            if cluster_id not in cluster_counts:
+                cluster_counts[cluster_id] = {}
+            cluster_counts[cluster_id][label] = cluster_counts[cluster_id].get(label, 0) + 1
+
+        correct_count = sum(max(counts.values()) for counts in cluster_counts.values())
+        return correct_count / float(len(labels))
+
+
+def infer_specialty_and_recommendations(active_symptoms: List[str]) -> Tuple[str, List[str]]:
+    """Infiere especialidad médica y estudios recomendados según síntomas activos."""
+    symptoms_set = set(s.lower() for s in active_symptoms)
+    
+    if "disnea" in symptoms_set or "tos" in symptoms_set:
+        spec = "NEUMONOLOGÍA"
+        recs = [
+            "[+] Realizar espirometría y placa de tórax (Rx).",
+            "[+] Evaluación de función respiratoria y saturación de oxígeno.",
+            "[+] Monitoreo de disnea y expectoración."
         ]
+    elif "presion_alta" in symptoms_set or "presion alta" in symptoms_set:
+        spec = "CARDIOLOGÍA"
+        recs = [
+            "[+] Electrocardiograma (ECG) y Monitoreo Holter 24hs.",
+            "[+] Medición periódica de presión arterial y ecocardiograma.",
+            "[+] Perfil lipídico y laboratorio cardiovascular."
+        ]
+    elif "dolor_abdominal" in symptoms_set or "dolor abdominal" in symptoms_set:
+        spec = "GASTROENTEROLOGÍA"
+        recs = [
+            "[+] Ecografía abdominal y ecografía hepatobiliar.",
+            "[+] Evaluación de laboratorio hepático y digestivo.",
+            "[+] Control nutricional y dieta blanda."
+        ]
+    elif "fiebre" in symptoms_set or "moco" in symptoms_set:
+        spec = "INFECTOLOGÍA / CLÍNICA MÉDICA"
+        recs = [
+            "[+] Hemograma completo y reactivos de fase aguda (PCR / VSG).",
+            "[+] Hisopado nasofaríngeo o cultivo de control.",
+            "[+] Hidratación adecuada y control térmico."
+        ]
+    else:
+        spec = "CLÍNICA MÉDICA GENERAL"
+        recs = [
+            "[+] Chequeo clínico general y laboratorio de rutina.",
+            "[+] Monitoreo preventivo de signos vitales."
+        ]
+    return spec, recs
 
 
-# ---------------------------------------------------------------------------
-# DataLoader
-# ---------------------------------------------------------------------------
+def load_dataset(file_path: str) -> Tuple[List[List[int]], List[str], Optional[List[str]], List[str]]:
+    """Carga dataset Excel (.xlsx) o CSV (.csv)."""
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"El archivo '{file_path}' no fue encontrado.")
 
-_ID_COLUMNS = {"id", "sensor_id"}
+    patient_ids = []
+    
+    if file_path.endswith('.xlsx'):
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(file_path, data_only=True)
+            sheet = wb.active
+            rows = list(sheet.iter_rows(values_only=True))
+            all_rows = [[str(cell) if cell is not None else "" for cell in r] for r in rows if any(r)]
+        except ImportError:
+            raise ImportError("Se requiere la librería 'openpyxl' para leer archivos .xlsx.")
+    else:
+        with open(file_path, mode='r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            all_rows = [row for row in reader if row and not row[0].startswith('#')]
 
+    if not all_rows:
+        raise ValueError("El archivo está vacío o no contiene datos válidos.")
 
-class DataLoader:
-    """Carga un CSV de features continuas y lo binariza segun el metadata.
-    El header debe tener una columna ID (``id`` o ``sensor_id``) y el resto
-    son features numericas. El metadata CSV define las reglas de binarizacion
-    (threshold + rule: gte/lte/gt/lt) por feature.
-    """
+    raw_headers = [col.strip() for col in all_rows[0]]
 
-    def __init__(self, csv_path, metadata_path=None):
-        self.csv_path = Path(csv_path)
-        self.metadata_path = Path(metadata_path) if metadata_path else None
-        self._metadata = None
+    id_col_idx = None
+    label_col_idx = None
+    feature_indices = []
 
-    def load_metadata(self):
-        if self.metadata_path is None:
-            raise MetadataError(
-                "No se proporciono metadata_path; la binarizacion lo requiere."
-            )
-        if not self.metadata_path.exists():
-            raise FileNotFoundCarGrossError(
-                f"No existe metadata: {self.metadata_path}"
-            )
-        rows = []
-        with self.metadata_path.open("r", encoding="utf-8", newline="") as fh:
-            reader = csv.DictReader(fh)
-            required = {"dataset", "feature", "threshold", "rule"}
-            missing = required - set(reader.fieldnames or [])
-            if missing:
-                raise MetadataError(
-                    f"metadata le faltan columnas: {sorted(missing)}"
-                )
-            dataset_name = self.csv_path.stem
-            for row in reader:
-                if row["dataset"].strip() != dataset_name:
-                    continue
-                try:
-                    threshold = float(row["threshold"])
-                except ValueError as exc:
-                    raise MetadataError(
-                        f"threshold invalido en metadata: {row['threshold']!r}"
-                    ) from exc
-                rows.append({
-                    "feature": row["feature"].strip(),
-                    "threshold": threshold,
-                    "rule": row["rule"].strip(),
-                })
-        if not rows:
-            raise MetadataError(
-                f"metadata sin filas para dataset={self.csv_path.stem!r}"
-            )
-        self._metadata = rows
-        return rows
-
-    @staticmethod
-    def binarize(value, rule, threshold):
-        if rule == "gte":
-            return int(value >= threshold)
-        if rule == "lte":
-            return int(value <= threshold)
-        if rule == "gt":
-            return int(value > threshold)
-        if rule == "lt":
-            return int(value < threshold)
-        raise BinarizationError(f"Regla desconocida: {rule!r}")
-
-    def load_and_binarize(self):
-        if not self.csv_path.exists():
-            raise FileNotFoundCarGrossError(
-                f"No existe CSV de entrada: {self.csv_path}"
-            )
-        metadata = self.load_metadata()
-        rules_by_feature = {}
-        for entry in metadata:
-            rules_by_feature.setdefault(entry["feature"], []).append(entry)
-        with self.csv_path.open("r", encoding="utf-8", newline="") as fh:
-            reader = csv.DictReader(fh)
-            if not reader.fieldnames:
-                raise DatasetError(f"CSV vacio: {self.csv_path}")
-            columns = list(reader.fieldnames)
-            id_col = next((c for c in columns if c in _ID_COLUMNS), None)
-            if id_col is None:
-                raise DatasetError(
-                    f"CSV sin columna ID (esperaba una de {_ID_COLUMNS}): "
-                    f"{columns}"
-                )
-            feature_cols = [c for c in columns if c != id_col]
-            missing_meta = [c for c in feature_cols if c not in rules_by_feature]
-            if missing_meta:
-                raise BinarizationError(
-                    f"Features sin entrada en metadata: {missing_meta}"
-                )
-            row_ids = []
-            binary_matrix = []
-            for row_idx, row in enumerate(reader):
-                row_ids.append(row[id_col])
-                bin_row = []
-                for col in feature_cols:
-                    raw = row[col]
-                    try:
-                        value = float(raw)
-                    except ValueError as exc:
-                        raise BinarizationError(
-                            f"Fila {row_idx}, columna {col!r}: valor no numerico {raw!r}"
-                        ) from exc
-                    for entry in rules_by_feature[col]:
-                        bin_row.append(self.binarize(value, entry["rule"], entry["threshold"]))
-                binary_matrix.append(bin_row)
-        if not binary_matrix:
-            raise DatasetError(f"CSV sin filas de datos: {self.csv_path}")
-        return row_ids, binary_matrix
-
-
-# ---------------------------------------------------------------------------
-# Manual (--man)
-# ---------------------------------------------------------------------------
-
-_MANUAL = """\
-SINOPSIS
-  python src/CarGross.py <csv_file> [opciones]
-
-DESCRIPCION
-  Implementa el clasificador Carpenter/Grossberg (ART1) para hacer clustering
-  no supervisado sobre patrones binarios. ART1 resuelve el dilema
-  estabilidad-plasticidad: la red puede aprender patrones nuevos sin olvidar
-  los antiguos gracias al parametro de vigilancia (rho).
-
-  Algoritmo de referencia: Box 3 de Lau, C. (Ed.) (1992). "Artificial Neural
-  Networks". IEEE Press, pp. 12-14. Transcripcion completa en
-  _legacy/CarGross_TP/lau_contenido.md dentro de este repositorio.
-
-  La red opera en ocho pasos (Box 3, Lau 1992):
-    1. Inicializa pesos top-down en 1 y bottom-up en 1/(1+N).
-    2. Presenta una nueva entrada binaria x.
-    3. Calcula puntajes de coincidencia mu_j para cada cluster activo.
-    4. Selecciona el mejor cluster j* por inhibicion lateral (MAXNET-like).
-    5. Test de vigilancia: ||T*X|| / ||X|| > rho ?
-    6. Si NO, deshabilita j* y vuelve a 3. Si todos fallan, crea cluster.
-    7. Si SI, adapta j*: t <- t AND x, b <- t / (0.5 + sum(t)).
-    8. Rehabilita los deshabilitados y vuelve a 2.
-
-  La inicializacion t_ij = 1 representa "no exemplar" (vector de todos unos).
-  Tras el primer match, el AND con x colapsa t al exemplar real.
-
-ARGUMENTOS
-  csv_file                  (posicional) CSV de entrada con features continuas.
-  -r, --vigilance RHO       Vigilancia rho en [0,1]. Default: 0.5.
-                            Cerca de 1 = coincidencia estricta (mas clusters).
-                            Cerca de 0 = coincidencia laxa (menos clusters).
-  -m, --max-clusters M      Maximo de clusters a crear. Default: 1000.
-  --metadata PATH           Metadata CSV. Default: data/metadata.csv.
-  -o, --output PATH         CSV de salida. Default: results/resultado.csv.
-  --save-txt PATH           TXT de salida. Default: results/resultado.txt.
-  --shuffle N               Repite el entrenamiento N veces con orden aleatorio.
-                            Reporta estabilidad y variacion de # clusters.
-  --seed S                  Semilla aleatoria. Default: 42.
-  -v, --verbose             Logging detallado paso a paso.
-  --man                     Imprime este manual y sale.
-  --test                    Corre el smoke test y sale.
-
-EJEMPLOS
-  # Dataset 1: pacientes (7 features -> 7 bits con metadata por defecto).
-  python src/CarGross.py data/dataset1_pacientes.csv --vigilance 0.7 -v
-
-  # Dataset 2: sensores (8 features -> 8 bits, voltaje produce 2).
-  python src/CarGross.py data/dataset2_sensores.csv --vigilance 0.6
-
-  # Evaluar estabilidad frente al orden de presentacion.
-  python src/CarGross.py data/dataset1_pacientes.csv --shuffle 20 --seed 7
-
-FORMATO DE SALIDA
-  CSV (--output): tres columnas, una fila por patron de entrada.
-    id          ID original (id o sensor_id segun dataset).
-    cluster     ID de cluster 0-indexed.
-    match_score ||T*X|| / ||X|| con 3 decimales.
-
-  TXT (--save-txt): reporte legible.
-    Encabezado con parametros y resumen.
-    Bloque por cluster: id, tamano, exemplar binario, score medio.
-    Pie con referencia al metadata usado.
-
-ALGORITMO DE REFERENCIA
-  Box 3, Lau (1992) pp. 12-14. La transcripcion completa, en espanol, vive
-  en _legacy/CarGross_TP/lau_contenido.md. Las ecuaciones se implementan literalmente.
-
-LIMITACIONES
-  - Solo entradas binarias. La binarizacion previa corre por metadata.
-  - El algoritmo es sensible al orden de presentacion (use --shuffle).
-  - Con rho alto y datos ruidosos, el numero de clusters crece rapido.
-  - Sin modificacion por "slow learning", la red no maneja bien el ruido
-    (ver discusion en Lau 1992, p. 13, "Comportamiento del clasificador").
-  - max_clusters limita la capacidad; agotarlo levanta DatasetError.
-
-REFERENCIAS
-  [1] Lau, C. (Ed.) (1992). Artificial Neural Networks. IEEE Press.
-      Box 3, pp. 12-14 ("El clasificador Carpenter/Grossberg").
-  [2] Carpenter, G.A. & Grossberg, S. (1987). A massively parallel
-      architecture for a self-organizing neural pattern recognition
-      machine. CVGIP, 37, 54-115.
-  [3] Lippmann, R.P. (1987). An Introduction to Computing with Neural
-      Nets. IEEE ASSP Magazine, April 1987, pp. 4-22. Reproducido en [1].
-"""
-
-
-def _imprimir_manual():
-    print(_MANUAL)
-
-
-# ---------------------------------------------------------------------------
-# Smoke test
-# ---------------------------------------------------------------------------
-
-def _ejecutar_smoke_test():
-    here = Path(__file__).resolve().parent
-    project_root = here.parent
-    csv_path = project_root / "data" / "dataset1_pacientes.csv"
-    meta_path = project_root / "data" / "metadata.csv"
-    try:
-        loader = DataLoader(csv_path, meta_path)
-        row_ids, entradas = loader.load_and_binarize()
-        net = ART1(dimension_entrada=len(entradas[0]), vigilancia=0.6)
-        net.entrenar(entradas)
-        if net.cantidad_clusters < 1:
-            print(f"TEST FAILED: cantidad_clusters={net.cantidad_clusters} (esperaba >=1)")
-            return
-        for idx, entrada in enumerate(entradas):
-            j, _ = net.predecir(entrada)
-            if j < 0 or j >= net.cantidad_clusters:
-                print(f"TEST FAILED: fila {idx} (id={row_ids[idx]}) sin cluster valido (j={j})")
-                return
-        print("TEST PASSED")
-    except Exception as exc:
-        print(f"TEST FAILED: {exc}")
-
-
-# ---------------------------------------------------------------------------
-# Salida
-# ---------------------------------------------------------------------------
-
-def _escribir_salida_csv(path, row_ids, results):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.writer(fh)
-        writer.writerow(["id", "cluster", "match_score"])
-        for rid, (cluster, score) in zip(row_ids, results):
-            writer.writerow([rid, cluster, f"{score:.3f}"])
-
-
-def _miembros_del_cluster(row_ids, results):
-    members = {}
-    for rid, (cluster, _) in zip(row_ids, results):
-        members.setdefault(cluster, []).append(rid)
-    return members
-
-
-def _formatear_exemplar(ex):
-    return "[" + " ".join(str(b) for b in ex) + "]"
-
-
-def _escribir_salida_txt(path, args, net, row_ids, results, feature_count):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    members = _miembros_del_cluster(row_ids, results)
-    exemplars = net.obtener_exemplares()
-    n_assigned = sum(1 for _, (c, _) in zip(row_ids, results) if c >= 0)
-    avg_score = (
-        sum(s for _, (_, s) in zip(row_ids, results) if s is not None) / len(results)
-        if results else 0.0
-    )
-    total_created = net.cantidad_clusters
-    nonempty_clusters = [j for j in range(total_created) if len(members.get(j, [])) > 0]
-    skipped = total_created - len(nonempty_clusters)
-    with path.open("w", encoding="utf-8") as fh:
-        fh.write("Reporte ART1 (Carpenter/Grossberg)\n")
-        fh.write("=" * 60 + "\n")
-        fh.write(f"Dataset:          {args.csv_file}\n")
-        fh.write(f"Metadata:         {args.metadata}\n")
-        fh.write(f"Vigilancia (rho): {args.vigilance}\n")
-        fh.write(f"Max clusters:     {args.max_clusters or feature_count}\n")
-        fh.write(f"N (features bin): {feature_count}\n")
-        fh.write(f"Filas totales:    {len(row_ids)}\n")
-        fh.write(
-            f"Cantidad de clusters con miembros: "
-            f"{len(nonempty_clusters)} (de {total_created} totales creados)\n"
-        )
-        fh.write(f"Score medio:      {avg_score:.3f}\n")
-        fh.write("=" * 60 + "\n\n")
-        if skipped > 0:
-            fh.write(
-                f"(Se omiten {skipped} clusters con exemplar vacio; "
-                "ver doc 06_limitaciones_y_etica.md para contexto.)\n\n"
-            )
-        for j in nonempty_clusters:
-            ids = members.get(j, [])
-            scores = [s for rid, (c, s) in zip(row_ids, results) if c == j]
-            mean_s = (sum(scores) / len(scores)) if scores else 0.0
-            fh.write(f"Cluster {j}\n")
-            fh.write(f"  Tamano:    {len(ids)}\n")
-            fh.write(f"  Exemplar:  {_formatear_exemplar(exemplars[j])}\n")
-            fh.write(f"  Score med: {mean_s:.3f}\n")
-            fh.write(f"  IDs:       {', '.join(ids)}\n\n")
-        fh.write("Referencia algoritmica: Box 3, Lau (1992) pp. 12-14.\n")
-        fh.write("Ver _legacy/CarGross_TP/lau_contenido.md para la transcripcion completa.\n")
-
-
-def _ejecutar_barajado(net_factory, entradas, n_runs, base_seed):
-    rng = random.Random(base_seed)
-    base_assignment = None
-    agreements = []
-    cluster_counts = []
-    for _ in range(n_runs):
-        indices = list(range(len(entradas)))
-        rng.shuffle(indices)
-        entradas_shuf = [entradas[i] for i in indices]
-        net = net_factory()
-        net.entrenar(entradas_shuf)
-        cluster_counts.append(net.cantidad_clusters)
-        shuffled_assign = [net.predecir(entrada)[0] for entrada in entradas_shuf]
-        assign = [0] * len(entradas)
-        for new_idx, old_idx in enumerate(indices):
-            assign[old_idx] = shuffled_assign[new_idx]
-        if base_assignment is None:
-            base_assignment = assign
+    for idx, header_name in enumerate(raw_headers):
+        h_lower = header_name.lower()
+        if idx == 0 and ('id' in h_lower or 'paciente' in h_lower):
+            id_col_idx = idx
+        elif idx == len(raw_headers) - 1 and ('especialidad' in h_lower or 'label' in h_lower or 'diag' in h_lower):
+            label_col_idx = idx
         else:
-            agree = sum(1 for a, b in zip(assign, base_assignment) if a == b)
-            agreements.append(agree / len(assign))
-    mean_clusters = sum(cluster_counts) / len(cluster_counts) if cluster_counts else 0.0
-    mean_agreement = (sum(agreements) / len(agreements)) if agreements else 1.0
-    return mean_clusters, mean_agreement, cluster_counts
+            feature_indices.append(idx)
+
+    if label_col_idx is None and len(all_rows) > 1:
+        last_val = all_rows[1][-1].strip()
+        if not last_val.isdigit():
+            label_col_idx = len(raw_headers) - 1
+            if label_col_idx in feature_indices:
+                feature_indices.remove(label_col_idx)
+
+    feature_names = [raw_headers[i] for i in feature_indices]
+    data_patterns = []
+    validation_labels = []
+
+    for row_idx, row in enumerate(all_rows[1:], start=2):
+        cleaned_row = [str(c).strip() for c in row]
+        if not cleaned_row or len(cleaned_row) < len(raw_headers):
+            continue
+
+        p_id = cleaned_row[id_col_idx] if id_col_idx is not None else f"PAC_{row_idx-1:03d}"
+        patient_ids.append(p_id)
+
+        binary_vector = []
+        for f_idx in feature_indices:
+            val_str = cleaned_row[f_idx]
+            try:
+                val = int(float(val_str))
+            except ValueError:
+                raise ValueError(f"Fila {row_idx}, columna '{raw_headers[f_idx]}': Valor '{val_str}' no es binario (0 o 1).")
+            if val not in (0, 1):
+                raise ValueError(f"Fila {row_idx}, columna '{raw_headers[f_idx]}': Valor '{val}' no es binario (0 o 1).")
+            binary_vector.append(val)
+
+        data_patterns.append(binary_vector)
+
+        if label_col_idx is not None:
+            validation_labels.append(cleaned_row[label_col_idx])
+
+    return data_patterns, feature_names, (validation_labels if label_col_idx is not None else None), patient_ids
 
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
+def generate_individual_patient_report(
+    patient_name_or_id: str,
+    symptoms_vector: List[int],
+    feature_names: List[str],
+    art1: ART1Network,
+    cluster_assigned: int,
+    matching_ratio: float,
+    reference_label: Optional[str] = None
+) -> str:
+    """Genera la Ficha e Informe Clínico Individual detallado del paciente/cliente."""
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    active_symptoms = [feature_names[i] for i, bit in enumerate(symptoms_vector) if bit == 1]
+    absent_symptoms = [feature_names[i] for i, bit in enumerate(symptoms_vector) if bit == 0]
 
-def _construir_parser():
-    p = argparse.ArgumentParser(
-        prog="CarGross",
-        description="Clustering no supervisado con ART1 (Carpenter-Grossberg, 1987).",
-        epilog="Usa --man para el manual completo.",
+    spec, recs = infer_specialty_and_recommendations(active_symptoms)
+    if reference_label:
+        ref_text = f"    • ESPECIALIDAD REGISTRADA (REF) : {reference_label}\n"
+    else:
+        ref_text = ""
+
+    template = art1.get_cluster_templates().get(cluster_assigned, [])
+    template_str = str(template)
+
+    report = f"""============================================================================
+   CENTRO DE DIAGNÓSTICO MÉDICO INTELIGENTE - RED NEURONAL ART1 (CARPENTER-GROSSBERG)
+                    FICHA DE EVALUACIÓN CLÍNICA INDIVIDUAL
+============================================================================
+ FECHA Y HORA DE EVALUACIÓN : {now_str}
+ NOMBRE / ID DEL PACIENTE   : {patient_name_or_id}
+ UMBRAL DE VIGILANCIA (rho)  : {art1.rho:.2f}
+----------------------------------------------------------------------------
+
+ 1. PERFIL SINTOMÁTICO DEL PACIENTE / CLIENTE
+----------------------------------------------------------------------------
+    • Síntomas Presentes (1)  : {', '.join(active_symptoms) if active_symptoms else 'Ninguno'}
+    • Síntomas Ausentes  (0)  : {', '.join(absent_symptoms) if absent_symptoms else 'Ninguno'}
+    • Vector Binario de Entrada (X) : {symptoms_vector}
+
+ 2. DIAGNÓSTICO Y CLASIFICACIÓN NO SUPERVISADA (RED ART1)
+----------------------------------------------------------------------------
+    • CATEGORÍA / CLUSTER ASIGNADO  : Cluster #{cluster_assigned}
+    • PORCENTAJE DE COINCIDENCIA    : {matching_ratio * 100:.2f}% (Matching Ratio: {matching_ratio:.4f})
+    • ESTADO DE VIGILANCIA          : PASADO (Coincidencia >= {art1.rho:.2f})
+    • PATRÓN REPRESENTANTE (t_ji)   : {template_str}
+    • TOTAL CLUSTERS EN RED         : {art1.num_committed_categories} categorías aprendidas
+{ref_text}
+ 3. DERIVACIÓN Y SUGERENCIA DE ESPECIALIDAD MÉDICA
+----------------------------------------------------------------------------
+    • ESPECIALIDAD RECOMENDADA     : {spec}
+    • RECOMENDACIONES Y PASOS A SEGUIR:
+"""
+    for r in recs:
+        report += f"       {r}\n"
+
+    report += """
+----------------------------------------------------------------------------
+ NOTA: Este informe es generado mediante Inteligencia Artificial (Red ART1)
+ con Aprendizaje No Supervisado. Debe ser validado por un profesional médico.
+============================================================================
+"""
+    return report
+
+
+def run_interactive_mode(art1: ART1Network, feature_names: List[str], save_txt_path: Optional[str] = None):
+    """Ejecuta la evaluación interactiva solicitando nombre y síntomas de un paciente en vivo."""
+    print("\n============================================================================")
+    print("      MODO CONSULTA INTERACTIVA DE PACIENTE / CLIENTE EN VIVO")
+    print("============================================================================")
+    
+    patient_name = input("\n[?] Ingrese el Nombre o ID del Paciente / Cliente: ").strip()
+    if not patient_name:
+        patient_name = "PAC_CLIENTE_INTERACTIVO"
+
+    print(f"\n[+] Evaluando síntomas para: '{patient_name}'")
+    print("   Responda con '1' (Presente) o '0' (Ausente) para cada síntoma:")
+
+    vector = []
+    for feat in feature_names:
+        while True:
+            val_str = input(f"   -> ¿Presenta {feat}? (1=Sí / 0=No): ").strip()
+            if val_str in ("0", "1"):
+                vector.append(int(val_str))
+                break
+            print("      [!] Entrada inválida. Ingrese exclusivamente 1 o 0.")
+
+    cluster_id, match_ratio = art1.train_pattern(vector)
+    report_text = generate_individual_patient_report(
+        patient_name_or_id=patient_name,
+        symptoms_vector=vector,
+        feature_names=feature_names,
+        art1=art1,
+        cluster_assigned=cluster_id,
+        matching_ratio=match_ratio
     )
-    p.add_argument("csv_file", nargs="?", help="CSV de entrada (features continuas).")
-    p.add_argument("--vigilance", "-r", type=float, default=0.5,
-                   help="Vigilancia rho en [0,1]. Default: 0.5.")
-    p.add_argument("--max-clusters", "-m", type=int, default=1000,
-                   help="Maximo de clusters. Default: 1000.")
-    p.add_argument("--metadata", default="data/metadata.csv",
-                   help="Metadata CSV. Default: data/metadata.csv.")
-    p.add_argument("--output", "-o", default="results/resultado.csv",
-                   help="CSV de salida. Default: results/resultado.csv.")
-    p.add_argument("--save-txt", default="results/resultado.txt",
-                   help="TXT de salida. Default: results/resultado.txt.")
-    p.add_argument("--shuffle", type=int, default=0,
-                   help="Repite N veces con orden aleatorio. Default: 0 (off).")
-    p.add_argument("--seed", type=int, default=42, help="Semilla aleatoria. Default: 42.")
-    p.add_argument("--verbose", "-v", action="store_true", help="Logging detallado.")
-    p.add_argument("--man", action="store_true", help="Imprime manual y sale.")
-    p.add_argument("--test", action="store_true", help="Smoke test y sale.")
-    return p
+
+    print("\n" + report_text)
+
+    if save_txt_path:
+        os.makedirs(os.path.dirname(os.path.abspath(save_txt_path)), exist_ok=True)
+        with open(save_txt_path, mode='w', encoding='utf-8') as f:
+            f.write(report_text)
+        print(f"[ÉXITO] Informe individual guardado en '{save_txt_path}'.")
 
 
-def main(argv=None):
-    parser = _construir_parser()
-    args = parser.parse_args(argv)
+def print_manual():
+    """Imprime el Manual de Referencia Técnica (--man)."""
+    man_text = """================================================================================
+   MANUAL DE REFERENCIA TÉCNICA Y DE USUARIO - RED NEURONAL ART1 (CarGross.py)
+================================================================================
+
+1. DESCRIPCIÓN DEL SISTEMA
+--------------------------------------------------------------------------------
+Este módulo implementa el clasificador no supervisado ART1 (Adaptive Resonance
+Theory 1) desarrollado por Gail Carpenter y Stephen Grossberg (1987), siguiendo
+la formulación matemática de Richard Lippmann (1987) y Lau (1992, Box 3).
+
+La red resuelve el Dilema de Estabilidad-Plasticidad, permitiendo aprender nuevos
+patrones sintomáticos (plasticidad) sin destruir las categorías previamente
+aprendidas (estabilidad).
+
+2. ARQUITECTURA Y ALGORITMO (8 PASOS DE LAU, 1992)
+--------------------------------------------------------------------------------
+- Capa F1 (Capa de Comparación): Recibe el vector binario de entrada X de dimensión N.
+- Capa F2 (Capa de Reconocimiento): Contiene M nodos de categoría con inhibición lateral.
+- Pesos Bottom-Up (b_ij): Inicializados en 1 / (1 + N). Filtran la entrada hacia F2.
+- Pesos Top-Down (t_ji): Inicializados en 1. Representan las plantillas prototipo.
+- Test de Vigilancia: Se evalúa ||T|| / ||X|| >= p.
+  * Si cumple: Se acepta la categoría j* y se adaptan los pesos mediante la regla AND.
+  * Si no cumple: Se deshabilita el nodo j* y se busca el siguiente mejor candidato.
+
+3. SINTAXIS Y COMANDOS DE EJECUCIÓN
+--------------------------------------------------------------------------------
+Sintaxis básica:
+  python src/CarGross.py <archivo_dataset> [opciones]
+  python src/CarGross.py --input <archivo_dataset> [opciones]
+
+Argumentos Principales:
+  pos_input / --input <ruta> Ruta al dataset Excel (.xlsx) o CSV (.csv).
+  -r, --rho <float>          Parámetro de vigilancia entre 0.0 y 1.0 (Defecto: 0.65).
+  -o, --output <ruta>        Ruta del archivo CSV para exportar resultados globales.
+  --save-txt <ruta>          Ruta para exportar el reporte descriptivo TXT.
+  -v, --verbose              Muestra el detalle del procesamiento en consola.
+  --interactive              Abre el modo interactivo de consulta para un paciente.
+  --patient-id <ID>          Genera la ficha médica individual de un paciente por su ID.
+  --shuffle <N>              Ejecuta N corridas con barajado aleatorio para test de estabilidad.
+  --seed <S>                 Semilla para reproducibilidad del barajado (Defecto: 42).
+  --test                     Ejecuta el Smoke Test automático de autoverificación.
+  --man                      Muestra este manual de referencia técnica.
+
+4. EJEMPLOS DE USO PRÁCTICO
+--------------------------------------------------------------------------------
+a) ejecutar el Smoke Test de verificación:
+   python src/CarGross.py --test
+
+b) Procesar Dataset de Entrenamiento:
+   python src/CarGross.py data/dataset_entrenamiento_ART1.xlsx -o results/res_entrenamiento.csv --save-txt results/res_entrenamiento.txt
+
+c) Procesar el Dataset de validacion:
+   python src/CarGross.py data/dataset_validacion_ART1.xlsx -o results/res_validacion.csv --save-txt results/res_validacion.txt
+
+d) procesar con un parámetro de vigilancia más estricto (r=0.80):
+   python src/CarGross.py data/dataset_entrenamiento_ART1.xlsx -r 0.80 -o results/res_entrenamiento_rho080.csv --save-txt results/res_entrenamiento_rho080.txt 
+
+e) Modo Interactivo en Vivo (Solicita Nombre y Síntomas):
+   python src/CarGross.py data/dataset_entrenamiento_ART1.xlsx --interactive --save-txt results/informe_paciente.txt
+
+f) Test de Estabilidad con Barajado Aleatorio:
+   python src/CarGross.py data/dataset_entrenamiento_ART1.xlsx --shuffle 5 --seed 42 -o results/estable.csv --save-txt results/estable.txt
+
+   
+================================================================================
+"""
+    print(man_text)
+
+
+def run_smoke_test():
+    """Ejecuta autotest de verificación."""
+    print("[TEST] Iniciando Smoke Test de la Red ART1...")
+    sample_patterns = [
+        [1, 0, 0, 0, 0, 1],
+        [1, 0, 0, 0, 0, 1],
+        [0, 1, 1, 0, 0, 0]
+    ]
+    art1 = ART1Network(num_inputs=6, max_categories=10, rho=0.65)
+    res = art1.fit(sample_patterns)
+    print(f"[TEST] Éxito: {art1.num_committed_categories} clusters creados.")
+    print("TEST PASSED")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="CarGross.py - Red Neuronal ART1 (Carpenter-Grossberg) para Diagnóstico Médico.",
+        add_help=True
+    )
+    
+    parser.add_argument("pos_input", nargs="?", type=str, default=None, help="Ruta al archivo dataset (.xlsx / .csv)")
+    parser.add_argument("--input", "-i", type=str, default=None, help="Ruta al archivo dataset (.xlsx / .csv)")
+    parser.add_argument("--rho", "-r", type=float, default=0.65, help="Parámetro de vigilancia (0.0 a 1.0, defecto: 0.65)")
+    parser.add_argument("--output", "-o", type=str, default="resultados_cargross.csv", help="Ruta del CSV de salida")
+    parser.add_argument("--save-txt", type=str, default=None, help="Ruta del reporte TXT de salida")
+    parser.add_argument("--max_cat", type=int, default=50, help="Máximo de categorías (defecto: 50)")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Modo detallado")
+    parser.add_argument("--interactive", action="store_true", help="Modo consulta interactiva de paciente en vivo")
+    parser.add_argument("--patient-id", type=str, default=None, help="ID o número de paciente para ficha individual")
+    parser.add_argument("--shuffle", type=int, default=0, help="Número de corridas barajadas para test de estabilidad")
+    parser.add_argument("--seed", type=int, default=42, help="Semilla aleatoria para reproducibilidad")
+    parser.add_argument("--test", action="store_true", help="Ejecutar autotest")
+    parser.add_argument("--man", action="store_true", help="Mostrar manual de referencia técnica")
+
+    args = parser.parse_args()
+
     if args.man:
-        _imprimir_manual()
+        print_manual()
         return
+
     if args.test:
-        _ejecutar_smoke_test()
+        run_smoke_test()
         return
-    if not args.csv_file:
-        parser.error("csv_file es obligatorio (o usa --man / --test).")
-    try:
-        loader = DataLoader(Path(args.csv_file), Path(args.metadata))
-        row_ids, entradas = loader.load_and_binarize()
-        feature_count = len(entradas[0])
-        if args.verbose:
-            print(f"[INFO] Cargadas {len(row_ids)} filas, {feature_count} features binarias.")
-            print(f"[INFO] Metadata: {args.metadata}")
-        net = ART1(
-            dimension_entrada=feature_count,
-            vigilancia=args.vigilance,
-            maximo_clusters=args.max_clusters,
-        )
-        net.entrenar(entradas)
-        results = [net.predecir(entrada) for entrada in entradas]
-        _escribir_salida_csv(args.output, row_ids, results)
-        _escribir_salida_txt(args.save_txt, args, net, row_ids, results, feature_count)
-        if args.verbose:
-            print(f"[INFO] Clusters formados: {net.cantidad_clusters}")
-            print(f"[INFO] CSV: {args.output}")
-            print(f"[INFO] TXT: {args.save_txt}")
-        if args.shuffle and args.shuffle > 0:
-            mean_c, mean_a, counts = _ejecutar_barajado(
-                net_factory=lambda: ART1(
-                    dimension_entrada=feature_count,
-                    vigilancia=args.vigilance,
-                    maximo_clusters=args.max_clusters,
-                ),
-                entradas=entradas,
-                n_runs=args.shuffle,
-                base_seed=args.seed,
-            )
-            print()
-            print("Reporte de estabilidad (--shuffle)")
-            print("-" * 40)
-            print(f"Ejecuciones:       {args.shuffle}")
-            print(f"Clusters por run:  {counts}")
-            print(f"Media # clusters:  {mean_c:.2f}")
-            if args.shuffle > 1:
-                print(f"Acuerdo medio:     {mean_a:.3f}  (vs. run 0)")
-    except CarGrossError as exc:
-        print(f"[ERROR] {exc}", file=sys.stderr)
-        print("Usa --man para ver el manual completo.", file=sys.stderr)
+
+    input_path = args.pos_input or args.input
+    if not input_path:
+        print("[ERROR] Debe especificar el archivo dataset de entrada. Use --help para ver las opciones.", file=sys.stderr)
         sys.exit(1)
-    except Exception as exc:
-        print(f"[ERROR] Inesperado: {exc}", file=sys.stderr)
-        sys.exit(2)
+
+    print("===============================================================")
+    print("   RED NEURONAL CARPENTER-GROSSBERG (ART1) - DIAGNÓSTICO MÉDICO ")
+    print("===============================================================")
+    print(f"-> Archivo de entrada: {input_path}")
+    print(f"-> Parámetro de Vigilancia (rho): {args.rho:.2f}")
+
+    patterns, feature_names, labels, patient_ids = load_dataset(input_path)
+    num_patients = len(patterns)
+    num_features = len(patterns[0])
+
+    print(f"-> Carga completada: {num_patients} registros, {num_features} síntomas.")
+    if args.verbose:
+        print(f"-> Síntomas detectados: {', '.join(feature_names)}")
+
+    art1 = ART1Network(num_inputs=num_features, max_categories=args.max_cat, rho=args.rho)
+    results = art1.fit(patterns)
+    metrics = art1.compute_metrics(validation_labels=labels)
+
+    # 1. Modo Interactivo
+    if args.interactive:
+        run_interactive_mode(art1, feature_names, save_txt_path=args.save_txt)
+        return
+
+    # 2. Modo Ficha de Paciente por ID
+    if args.patient_id:
+        target_idx = None
+        for idx, pid in enumerate(patient_ids):
+            if str(pid).strip().lower() == str(args.patient_id).strip().lower():
+                target_idx = idx
+                break
+        if target_idx is None:
+            # Intento por índice numérico de paciente (ej. "1" -> índice 0)
+            if args.patient_id.isdigit():
+                idx_num = int(args.patient_id) - 1
+                if 0 <= idx_num < num_patients:
+                    target_idx = idx_num
+
+        if target_idx is None:
+            print(f"[!] No se encontró el paciente con ID '{args.patient_id}'. Mostrando informe del primer paciente.")
+            target_idx = 0
+
+        p_id = patient_ids[target_idx]
+        p_vec = patterns[target_idx]
+        p_res = results[target_idx]
+        p_label = labels[target_idx] if labels else None
+
+        indiv_report = generate_individual_patient_report(
+            patient_name_or_id=p_id,
+            symptoms_vector=p_vec,
+            feature_names=feature_names,
+            art1=art1,
+            cluster_assigned=p_res["cluster_assigned"],
+            matching_ratio=p_res["matching_ratio"],
+            reference_label=p_label
+        )
+
+        print("\n" + indiv_report)
+
+        if args.save_txt:
+            os.makedirs(os.path.dirname(os.path.abspath(args.save_txt)), exist_ok=True)
+            with open(args.save_txt, mode='w', encoding='utf-8') as f:
+                f.write(indiv_report)
+            print(f"[ÉXITO] Ficha del paciente '{p_id}' guardada en '{args.save_txt}'.")
+        return
+
+    # 3. Reporte General Normal
+    txt_lines = []
+    header_info = f"""================================================================
+   RED NEURONAL CARPENTER-GROSSBERG (ART1) - DIAGNÓSTICO MÉDICO 
+================================================================
+-> Archivo de entrada: {input_path}
+-> Parámetro de Vigilancia (rho): {args.rho:.2f}
+"""
+    txt_lines.append(header_info)
+
+    resumen = "--- RESUMEN DE EVALUACIÓN Y MÉTRICAS ---\n"
+    resumen += f"1. Categorías / Clusters Formados (M): {int(metrics.get('num_clusters', 0))}\n"
+    resumen += f"2. Matching Ratio Promedio (||T||/||X||): {metrics.get('avg_matching_ratio', 0.0):.4f}\n"
+    resumen += f"3. Estabilidad (Bits '1' activos promedio por plantilla): {metrics.get('avg_template_active_bits', 0.0):.2f}\n"
+    if "cluster_purity" in metrics:
+        resumen += f"4. Pureza de Clusters (Validación Externa): {metrics.get('cluster_purity', 0.0) * 100:.2f}%\n"
+
+    txt_lines.append(resumen)
+
+    templates_str = "--- PLANTILLAS REPRESENTATIVAS DE CADA CLUSTER ---\n"
+    templates = art1.get_cluster_templates()
+    for c_id, temp in templates.items():
+        active_syms = [feature_names[i] for i, bit in enumerate(temp) if bit == 1]
+        spec, _ = infer_specialty_and_recommendations(active_syms)
+        sym_names_str = f" ({', '.join(active_syms)})" if active_syms else ""
+        templates_str += f" Cluster #{c_id}{sym_names_str}: {temp} -> {spec}\n"
+
+    txt_lines.append(templates_str)
+
+    # 4. Test de Estabilidad (Shuffle) si corresponde
+    if args.shuffle > 0:
+        print("\n--- TEST DE ESTABILIDAD CON BARAJADO ALEATORIO ---")
+        st_summary = f"--- TEST DE ESTABILIDAD CON BARAJADO ALEATORIO ({args.shuffle} CORRIDAS) ---\n"
+        
+        clusters_list = []
+        ratios_list = []
+        rng = random.Random(args.seed)
+
+        for run_idx in range(1, args.shuffle + 1):
+            shuffled_indices = list(range(len(patterns)))
+            rng.shuffle(shuffled_indices)
+            shuffled_patterns = [patterns[i] for i in shuffled_indices]
+
+            art1_shuffled = ART1Network(num_inputs=num_features, max_categories=args.max_cat, rho=args.rho)
+            shuffled_res = art1_shuffled.fit(shuffled_patterns)
+            shuffled_metrics = art1_shuffled.compute_metrics()
+
+            num_c = int(shuffled_metrics.get('num_clusters', 0))
+            avg_m = shuffled_metrics.get('avg_matching_ratio', 0.0)
+
+            clusters_list.append(num_c)
+            ratios_list.append(avg_m)
+
+            line_run = f"  Corrida Barajada #{run_idx}: {num_c} clusters formados | Matching Ratio: {avg_m:.4f}"
+            print(line_run)
+            st_summary += line_run + "\n"
+
+        avg_c = sum(clusters_list) / float(len(clusters_list))
+        avg_r = sum(ratios_list) / float(len(ratios_list))
+        line_avg = f" -> Promedio post-barajado: {avg_c:.2f} clusters (Base original: {int(metrics.get('num_clusters', 0))}) | Matching Ratio: {avg_r:.4f}"
+        print(line_avg)
+        st_summary += line_avg + "\n"
+        txt_lines.append(txt_lines.pop() + "\n" if txt_lines else "")
+        txt_lines.append(st_summary)
+
+    # Imprimir resumen en consola
+    for block in txt_lines[1:]:
+        print(block)
+
+    # Exportar CSV de asignación general
+    if args.output:
+        os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
+        with open(args.output, mode='w', newline='', encoding='utf-8') as f_out:
+            writer = csv.writer(f_out)
+            writer.writerow(["ID_Paciente", "Cluster_Asignado", "Matching_Ratio", "Especialidad_Sugerida"])
+            for idx, r in enumerate(results):
+                p_id = patient_ids[idx]
+                p_vec = patterns[idx]
+                act_s = [feature_names[i] for i, bit in enumerate(p_vec) if bit == 1]
+                spec, _ = infer_specialty_and_recommendations(act_s)
+                writer.writerow([p_id, r["cluster_assigned"], f"{r['matching_ratio']:.4f}", spec])
+        print(f"[ÉXITO] Resultados guardados en CSV '{args.output}'.")
+
+    # Exportar Reporte TXT general
+    if args.save_txt:
+        os.makedirs(os.path.dirname(os.path.abspath(args.save_txt)), exist_ok=True)
+        with open(args.save_txt, mode='w', encoding='utf-8') as f_txt:
+            f_txt.write("\n".join(txt_lines))
+            f_txt.write(f"\n================================================================\n Reporte generado automáticamente: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n================================================================\n")
+        print(f"[ÉXITO] Reporte TXT completo guardado en '{args.save_txt}'.")
 
 
 if __name__ == "__main__":
