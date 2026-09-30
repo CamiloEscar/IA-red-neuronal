@@ -30,6 +30,9 @@ El nivel de exigencia para la asignación de pacientes a las distintas categorí
 
 - **Python 3.10+**
 - **Sin dependencias externas** en tiempo de ejecución (pure stdlib: `csv`, `argparse`, `random`, `math`, `os`)
+- **Datasets en `.csv` o `.xlsx`**: el formato se detecta automáticamente por la extensión del archivo
+  (también en mayúsculas). Para `.xlsx` se usa `openpyxl` si está instalado; si no, se usa un lector
+  interno basado en `zipfile` + `xml.etree`, por lo que **no es obligatorio instalar nada**.
 
 
 -----------------------------------------------------------------------------------------------------------------------
