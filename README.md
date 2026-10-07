@@ -45,6 +45,14 @@ python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt  
 ```
+
+-----------------------------------------------------------------------------------------------------------------------
+
+## Se puede ejecutar el archivo CarGross.py siguiendo los pasos que se detallan abajo 
+## o se puede ejecutar el archivo notebooks/01_demo_art1.ipynb, en ese archivo se va generando una breve
+## explicacion por cada bloque de ejecucion de codigo. Ademas cuenta con graficos estadisticos sobre las distintas
+## ejecuciones y datos procesados.
+
 -----------------------------------------------------------------------------------------------------------------------
 
 ## Cómo ejecutar / pruebas
@@ -135,6 +143,8 @@ Ejecuta la corrida **5 veces** con órdenes aleatorios de entrada y reporta el *
 IA-red-neuronal/
 ├── src/
 │ └── CarGross.py
+├── notebooks/
+│ └── 01_demo_art1.ipynb
 ├── data/
 │ ├── dataset_entrenamiento_ART1.xlsx
 │ └── dataset_validacion_ART1.xlsx
