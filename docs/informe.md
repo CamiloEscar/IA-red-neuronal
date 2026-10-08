@@ -1,6 +1,6 @@
 # Informe de corridas - Red ART1
 
-Materia Redes Neuronales - UADER
+Materia Inteligencia Artificial - UADER
 Fecha: 10/10/2026
 
 ## Datasets usados

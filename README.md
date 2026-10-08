@@ -2,7 +2,7 @@
 
 Implementación de la red de Carpenter-Grossberg (Adaptive Resonance Theory 1) según Box 3 de Lau (1992), aplicada a clustering no supervisado de datos tabulares clínicos y operativos.
 
-Trabajo Final Integrador de la materia **Redes Neuronales** — UADER, IDTI Lab.
+Trabajo Final Integrador de la materia **Inteligencia Artificial** — UADER, IDTI Lab.
 
 -------------------------------------------------------------------------------------------
 
