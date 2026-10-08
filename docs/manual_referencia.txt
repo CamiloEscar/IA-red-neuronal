@@ -1,0 +1,160 @@
+================================================================================
+   MANUAL DE REFERENCIA TÉCNICA Y DE USUARIO - RED NEURONAL ART1 (CarGross.py)
+================================================================================
+
+1. DESCRIPCIÓN DEL SISTEMA
+--------------------------------------------------------------------------------
+Este módulo implementa el clasificador no supervisado ART1 (Adaptive Resonance
+Theory 1) desarrollado por Gail Carpenter y Stephen Grossberg (1987), siguiendo
+la formulación matemática de Richard Lippmann (1987) y Lau (1992, Box 3).
+
+La red resuelve el Dilema de Estabilidad-Plasticidad, permitiendo aprender nuevos
+patrones sintomáticos (plasticidad) sin destruir las categorías previamente
+aprendidas (estabilidad).
+
+2. ARQUITECTURA Y ALGORITMO (8 PASOS DE LAU, 1992)
+--------------------------------------------------------------------------------
+- Capa F1 (Capa de Comparación): Recibe el vector binario de entrada X de dimensión N.
+- Capa F2 (Capa de Reconocimiento): Contiene M nodos de categoría con inhibición lateral.
+- Pesos Bottom-Up (b_ij): Inicializados en 1 / (1 + N). Filtran la entrada hacia F2.
+- Pesos Top-Down (t_ji): Inicializados en 1. Representan las plantillas prototipo.
+- Test de Vigilancia: Se evalúa ||T|| / ||X|| >= p.
+  * Si cumple: Se acepta la categoría j* y se adaptan los pesos mediante la regla AND.
+  * Si no cumple: Se deshabilita el nodo j* y se busca el siguiente mejor candidato.
+
+3. SINTAXIS Y COMANDOS DE EJECUCIÓN
+--------------------------------------------------------------------------------
+Sintaxis básica:
+  python src/CarGross.py <archivo_dataset> [opciones]
+  python src/CarGross.py --input <archivo_dataset> [opciones]
+
+Argumentos Principales:
+  pos_input / --input <ruta> Ruta al dataset. Formato de entrada: CSV (.csv);
+                      también se admiten archivos Excel (.xlsx).
+  -r, --rho <float>          Parámetro de vigilancia entre 0.0 y 1.0 (Defecto: 0.65).
+  -o, --output <ruta>        Ruta del archivo CSV para exportar resultados globales.
+  --save-txt <ruta>          Ruta para exportar el reporte descriptivo TXT.
+  -v, --verbose              Muestra el detalle del procesamiento en consola.
+  --interactive              Abre el modo interactivo de consulta para un paciente.
+  --patient-id <ID>          Genera la ficha médica individual de un paciente por su ID.
+  --shuffle <N>              Ejecuta N corridas con barajado aleatorio para test de estabilidad.
+  --seed <S>                 Semilla para reproducibilidad del barajado (Defecto: 42).
+  --test                     Ejecuta el Smoke Test automático de autoverificación.
+  --man                      Muestra este manual de referencia técnica.
+
+4. EJEMPLOS DE USO PRÁCTICO
+--------------------------------------------------------------------------------
+a) ejecutar el Smoke Test de verificación:
+   python src/CarGross.py --test
+
+b) Procesar Dataset de Entrenamiento:
+   python src/CarGross.py data/dataset_entrenamiento_ART1.csv -o results/res_entrenamiento.csv --save-txt results/res_entrenamiento.txt
+
+c) Procesar el Dataset de validacion:
+   python src/CarGross.py data/dataset_validacion_ART1.csv -o results/res_validacion.csv --save-txt results/res_validacion.txt
+
+d) procesar con un parámetro de vigilancia más estricto (r=0.80):
+   python src/CarGross.py data/dataset_entrenamiento_ART1.csv -r 0.80 -o results/res_entrenamiento_rho080.csv --save-txt results/res_entrenamiento_rho080.txt 
+
+e) Modo Interactivo en Vivo (Solicita Nombre y Síntomas):
+   python src/CarGross.py data/dataset_entrenamiento_ART1.csv --interactive --save-txt results/informe_paciente.txt
+
+f) Test de Estabilidad con Barajado Aleatorio:
+   python src/CarGross.py data/dataset_entrenamiento_ART1.csv --shuffle 5 --seed 42 -o results/estable.csv --save-txt results/estable.txt
+
+   
+5. INSTALACIÓN
+--------------------------------------------------------------------------------
+Requisitos: Python 3.10 o superior.
+
+  git clone <url-del-repo>
+  python -m venv venv
+  .\venv\Scripts\Activate.ps1        (en bash: source venv/bin/activate)
+  pip install -r requirements.txt
+
+Para verificar que quedó bien:
+
+  python src/CarGross.py --test
+
+Si imprime "TEST PASSED", todo listo.
+
+Nota: los .csv se leen con la librería estándar de Python, no hace falta
+instalar nada extra. openpyxl solo se usa para .xlsx y pandas/matplotlib solo
+para el notebook.
+
+6. DATASETS, CÓMO CORRERLOS Y SALIDA ESPERADA
+--------------------------------------------------------------------------------
+Los datasets incluidos están en formato CSV (el formato de entrada del
+módulo) y tienen 100 registros y 5 variables cada uno:
+
+  data/dataset_entrenamiento_ART1.csv     100 pacientes, 5 síntomas
+  data/dataset_validacion_ART1.csv        100 pacientes, 5 síntomas + etiqueta
+
+Cada CSV tiene: primera columna con el ID del paciente, una columna por
+síntoma con 1/0, y opcionalmente una última columna con la especialidad
+esperada (solo se usa para calcular la pureza).
+
+Comandos:
+
+  python src/CarGross.py data/dataset_entrenamiento_ART1.csv -o results/res_entrenamiento.csv --save-txt results/res_entrenamiento.txt
+  python src/CarGross.py data/dataset_validacion_ART1.csv -o results/res_validacion.csv --save-txt results/res_validacion.txt
+
+En consola se ve: la ruta del archivo y el rho, la cantidad de registros y
+síntomas cargados, el resumen con clusters formados (M), matching ratio y
+estabilidad (y pureza si el dataset trae etiquetas), y las plantillas de cada
+cluster con su especialidad sugerida.
+
+En archivos: el CSV (-o) deja una fila por paciente con ID, cluster, matching
+ratio y especialidad; el TXT (--save-txt) deja el reporte completo. Si la
+carpeta de salida no existe, se crea sola.
+
+Con rho 0.65 los resultados de referencia son:
+
+  - Entrenamiento: 14 clusters, matching ratio 0.9500.
+  - Validación: 12 clusters, matching ratio 0.9600, pureza 69%.
+
+El detalle de las corridas está en docs/informe.md.
+
+7. ALCANCES Y LIMITACIONES
+--------------------------------------------------------------------------------
+- Es una herramienta académica: no diagnostica pacientes. La especialidad que
+  sugiere es una traducción de la plantilla del cluster y hay que validarla
+  con un profesional de la salud.
+- Solo acepta valores 0 y 1. Si el archivo trae otra cosa, corta con [ERROR].
+- ART1 depende del orden de los registros: si se barajan los pacientes pueden
+  cambiar los clusters. Es una propiedad conocida del algoritmo (se puede
+  medir con --shuffle).
+- El rho se elige a mano. Con rho bajo los clusters quedan grandes y
+  mezclados; con rho alto quedan muchos y chicos.
+- El máximo de clusters está limitado por --max_cat (50 por defecto).
+- No hay interfaz gráfica ni guarda nada por sí solo: hay que pasar -o y/o
+  --save-txt para generar archivos.
+
+8. PREGUNTAS FRECUENTES
+--------------------------------------------------------------------------------
+P: ¿Por qué hay que hacer pip install si dice que no hay dependencias?
+R: Para los .csv no hace falta nada: se leen con la biblioteca estándar. El
+   pip install es solo para .xlsx (openpyxl) y para el notebook (pandas,
+   matplotlib).
+
+P: ¿Cómo elijo el rho?
+R: No hay un valor exacto. Con 0.65 los clusters quedan razonables y la
+   pureza da 69%. Si se sube mucho, se fragmentan los grupos; si se baja
+   mucho, se mezclan. Lo mejor es probar varios valores y mirar la cantidad
+   de clusters y la pureza.
+
+P: ¿Por qué cambian los clusters si barajo los datos?
+R: ART1 aprende registro por registro, y el orden en que llegan los pacientes
+   define qué plantillas se crean. Es propio del algoritmo, y por eso existe
+   el modo --shuffle para medirlo.
+
+P: ¿Puedo usar mis propios datos?
+R: Sí, con un CSV con ID, variables en 0/1 y (opcional) la etiqueta al final.
+   Si algún valor no es 0 o 1, la corrida corta con [ERROR].
+
+P: ¿Esto diagnostica pacientes?
+R: No, solo agrupa. Es un trabajo de la materia Redes Neuronales y la salida
+   tiene que ser revisada por un profesional médico.
+
+================================================================================
+

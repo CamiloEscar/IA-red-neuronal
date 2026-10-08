@@ -8,6 +8,11 @@ venv
 
 # Salidas de corridas (regenerables con el CLI)
 results/
+resultados_*.csv
+notebooks/*.exec.ipynb
+
+# Estado local de herramientas del asistente
+.atl/
 
 # Datasets derivados / de prueba
 data/_demo_*.csv

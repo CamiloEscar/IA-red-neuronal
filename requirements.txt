@@ -1,3 +1,6 @@
-pandas
+# Opcional: los .csv se procesan con la stdlib. Esta lista es solo para .xlsx y el notebook.
 openpyxl
+pandas
 matplotlib
+nbconvert
+ipykernel

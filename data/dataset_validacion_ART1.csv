@@ -1,0 +1,101 @@
+Paciente,Tos,Moco,Fiebre,Dolor abdominal,Presión alta,Especialidad esperada
+P187,1,0,0,0,0,Medicina general
+P104,1,1,0,0,0,Neumología
+P188,1,0,0,0,1,Medicina general
+P167,1,0,1,0,0,Infectología
+P178,0,1,1,0,0,Infectología
+P165,0,0,1,0,0,Infectología
+P174,0,0,0,0,0,Infectología
+P179,0,0,1,0,0,Infectología
+P176,0,0,1,0,0,Infectología
+P125,0,0,0,0,1,Cardiología
+P168,0,0,0,0,0,Infectología
+P126,0,0,0,0,1,Cardiología
+P129,0,0,0,0,1,Cardiología
+P166,1,0,1,0,0,Infectología
+P134,0,0,0,0,1,Cardiología
+P147,0,0,0,1,0,Gastroenterología
+P150,0,0,0,1,0,Gastroenterología
+P197,1,0,0,0,1,Medicina general
+P149,0,0,0,1,0,Gastroenterología
+P192,0,0,1,0,1,Medicina general
+P121,1,0,1,0,1,Cardiología
+P127,0,0,0,0,1,Cardiología
+P103,1,1,0,0,0,Neumología
+P173,0,0,1,0,1,Infectología
+P132,0,0,0,0,0,Cardiología
+P163,1,0,1,0,0,Infectología
+P105,1,1,0,0,0,Neumología
+P142,0,0,0,1,0,Gastroenterología
+P106,1,1,1,0,0,Neumología
+P101,1,0,0,0,0,Neumología
+P135,0,0,0,1,1,Cardiología
+P122,0,0,0,0,1,Cardiología
+P160,0,0,1,1,0,Gastroenterología
+P190,0,0,0,1,0,Medicina general
+P175,0,0,1,0,0,Infectología
+P138,0,0,0,0,1,Cardiología
+P145,0,0,0,1,0,Gastroenterología
+P102,1,1,1,0,0,Neumología
+P183,0,0,0,0,0,Medicina general
+P140,0,0,0,0,1,Cardiología
+P172,0,1,1,0,0,Infectología
+P195,0,0,0,1,0,Medicina general
+P151,0,0,1,0,0,Gastroenterología
+P157,0,0,1,0,0,Gastroenterología
+P118,1,0,1,0,0,Neumología
+P170,0,0,1,1,0,Infectología
+P124,0,0,1,0,1,Cardiología
+P136,0,0,0,0,1,Cardiología
+P189,0,0,0,1,0,Medicina general
+P196,0,0,0,0,0,Medicina general
+P200,0,0,0,0,0,Medicina general
+P131,1,0,0,0,1,Cardiología
+P169,0,1,1,0,0,Infectología
+P110,1,1,0,0,0,Neumología
+P114,1,1,1,0,0,Neumología
+P182,1,0,0,0,0,Medicina general
+P137,1,0,0,0,1,Cardiología
+P164,1,0,1,0,0,Infectología
+P123,0,0,0,1,1,Cardiología
+P180,0,0,1,0,0,Infectología
+P139,0,0,0,0,1,Cardiología
+P119,1,1,0,0,0,Neumología
+P162,0,0,1,0,0,Infectología
+P107,1,1,1,1,0,Neumología
+P198,0,0,0,0,1,Medicina general
+P146,1,0,0,1,0,Gastroenterología
+P191,0,0,1,0,0,Medicina general
+P116,1,0,1,0,0,Neumología
+P143,0,0,0,1,0,Gastroenterología
+P108,1,1,0,0,0,Neumología
+P117,1,1,0,0,0,Neumología
+P181,0,1,1,1,0,Medicina general
+P186,0,0,0,0,0,Medicina general
+P194,1,0,1,1,0,Medicina general
+P177,1,0,1,1,0,Infectología
+P111,0,1,1,0,0,Neumología
+P112,1,1,0,0,0,Neumología
+P109,1,0,0,0,0,Neumología
+P161,1,0,1,0,0,Infectología
+P120,0,1,0,0,0,Neumología
+P148,0,0,0,0,0,Gastroenterología
+P133,0,0,0,0,1,Cardiología
+P185,1,0,1,0,1,Medicina general
+P155,0,0,0,1,0,Gastroenterología
+P141,0,0,0,1,0,Gastroenterología
+P113,1,1,1,0,0,Neumología
+P154,0,0,0,1,0,Gastroenterología
+P152,0,0,1,0,1,Gastroenterología
+P159,0,0,0,1,0,Gastroenterología
+P144,0,0,0,1,1,Gastroenterología
+P153,0,0,0,1,0,Gastroenterología
+P130,1,0,0,0,1,Cardiología
+P158,0,0,1,1,1,Gastroenterología
+P156,0,0,0,1,0,Gastroenterología
+P128,0,0,0,0,1,Cardiología
+P193,0,0,0,1,1,Medicina general
+P171,1,0,1,0,1,Infectología
+P199,1,0,0,0,0,Medicina general
+P184,0,0,0,0,0,Medicina general
+P115,1,1,1,0,0,Neumología

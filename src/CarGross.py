@@ -259,6 +259,190 @@ def infer_specialty_and_recommendations(active_symptoms: List[str]) -> Tuple[str
     return spec, recs
 
 
+def _normalize_numeric_str(text: str) -> str:
+    """Unifica la representación de números entre formatos: '1.0' -> '1'.
+
+    Es el mismo resultado que queda al leer una celda numérica desde XLSX,
+    de modo que un CSV y un XLSX del mismo dataset den exactamente lo mismo.
+    Solo actúa sobre números canónicos, para no alterar IDs con formato '007'.
+    """
+    if not text or text[0] not in '0123456789.-':
+        return text
+    try:
+        num = float(text)
+    except ValueError:
+        return text
+    if not num.is_integer():
+        return text
+    canonical = str(int(num))
+    return canonical if text in (canonical, canonical + '.0') else text
+
+
+def _cell_to_str(value: Any) -> str:
+    """Normaliza un valor de celda (Excel o CSV) a texto plano.
+
+    De esta forma ambos formatos producen exactamente los mismos strings:
+    None -> "", True/False -> "1"/"0", 1.0 -> "1" (mismo resultado que lee un CSV).
+    """
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if isinstance(value, float):
+        return str(int(value)) if value.is_integer() else str(value)
+    return _normalize_numeric_str(str(value).strip())
+
+
+def _read_csv_rows(file_path: str) -> List[List[str]]:
+    """Lee todas las filas de un archivo .csv como texto plano.
+
+    Ignora comentarios (líneas que empiezan con '#') y filas totalmente vacías
+    (típicas al final del archivo).
+    """
+    # utf-8-sig absorbe el BOM que dejan Excel/Windows al exportar;
+    # si el archivo no decodifica como UTF-8, se reintenta con la codificación local (cp1252).
+    for encoding in ('utf-8-sig', 'cp1252'):
+        try:
+            with open(file_path, mode='r', encoding=encoding, newline='') as f:
+                rows = []
+                for row in csv.reader(f):
+                    if not row or row[0].lstrip().startswith('#'):
+                        continue
+                    if all(cell.strip() == "" for cell in row):
+                        continue
+                    rows.append([_cell_to_str(cell) for cell in row])
+                return rows
+        except UnicodeDecodeError:
+            continue
+    raise ValueError(f"No se pudo decodificar el archivo '{file_path}'. Se probaron UTF-8 y CP1252.")
+
+
+def _xlsx_col_index(cell_ref: str) -> int:
+    """Convierte la referencia de celda ('B3') en índice de columna base 0 (1)."""
+    idx = 0
+    letters = 0
+    for ch in cell_ref:
+        if not ch.isalpha():
+            break
+        idx = idx * 26 + (ord(ch.upper()) - ord('A') + 1)
+        letters += 1
+    return idx - 1 if letters else -1
+
+
+def _xlsx_cell_value(cell: Any, shared_strings: List[str], ns: str) -> str:
+    """Extrae el valor de una celda .xlsx (lector stdlib) normalizado a texto."""
+    cell_type = cell.get("t", "n")
+    if cell_type == "inlineStr":
+        return "".join(t.text or "" for t in cell.iter(f"{ns}t")).strip()
+    v = cell.find(f"{ns}v")
+    if v is None or v.text is None:
+        return ""
+    if cell_type == "s":  # índice dentro de las cadenas compartidas
+        return _normalize_numeric_str(shared_strings[int(v.text)].strip())
+    if cell_type == "b":  # booleano de Excel -> 1 / 0
+        return "1" if v.text.strip() == "1" else "0"
+    # Valores numéricos: '1.0' se normaliza a '1' para que coincida con lo que lee un CSV.
+    return _normalize_numeric_str(v.text.strip())
+
+
+def _read_xlsx_rows_stdlib(file_path: str) -> List[List[str]]:
+    """Lector .xlsx mínimo sin dependencias externas (lee la primera hoja del libro).
+
+    Un archivo .xlsx es un ZIP con XML adentro: se leen las cadenas compartidas
+    y la hoja de cálculo con xml.etree. Cubre hojas simples de celdas de texto/número.
+    """
+    import zipfile
+    import xml.etree.ElementTree as ET
+
+    ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+    ns_rel = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+    ns_rid = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+
+    with zipfile.ZipFile(file_path) as z:
+        names = z.namelist()
+
+        # 1) Cadenas compartidas: el texto de las celdas vive acá, indexado.
+        shared_strings: List[str] = []
+        if "xl/sharedStrings.xml" in names:
+            sst = ET.fromstring(z.read("xl/sharedStrings.xml"))
+            for si in sst.findall(f"{ns}si"):
+                shared_strings.append("".join(t.text or "" for t in si.iter(f"{ns}t")))
+
+        # 2) Primera hoja declarada en el libro, resuelta vía sus relaciones.
+        wb = ET.fromstring(z.read("xl/workbook.xml"))
+        first_sheet = wb.find(f"{ns}sheets/{ns}sheet")
+        if first_sheet is None:
+            raise ValueError(f"No se encontró ninguna hoja de cálculo en '{file_path}'.")
+        rel_id = first_sheet.get(f"{ns_rid}id")
+        target = None
+        for rel in ET.fromstring(z.read("xl/_rels/workbook.xml.rels")).findall(f"{ns_rel}Relationship"):
+            if rel.get("Id") == rel_id:
+                target = rel.get("Target")
+                break
+        if not target:
+            raise ValueError(f"No se pudo ubicar la hoja de cálculo en '{file_path}'.")
+        sheet_path = target.lstrip("/") if target.startswith("/") else "xl/" + target
+
+        # 3) Filas y celdas (las celdas ausentes se rellenan con "" para alinear columnas).
+        sheet = ET.fromstring(z.read(sheet_path))
+        rows = []
+        for row_el in sheet.iter(f"{ns}row"):
+            row: List[str] = []
+            for cell in row_el.findall(f"{ns}c"):
+                col_idx = _xlsx_col_index(cell.get("r", ""))
+                if col_idx < 0:
+                    col_idx = len(row)
+                while len(row) < col_idx:
+                    row.append("")
+                row.append(_xlsx_cell_value(cell, shared_strings, ns))
+            rows.append(row)
+        return rows
+
+
+def _read_xlsx_rows(file_path: str) -> List[List[str]]:
+    """Lee todas las filas de una hoja .xlsx como texto plano.
+
+    Usa openpyxl si está instalado; si no, el lector stdlib (_read_xlsx_rows_stdlib).
+    """
+    try:
+        import openpyxl
+    except ImportError:
+        openpyxl = None
+
+    if openpyxl is not None:
+        wb = openpyxl.load_workbook(file_path, data_only=True)
+        rows = [[_cell_to_str(cell) for cell in r] for r in wb.active.iter_rows(values_only=True)]
+    else:
+        rows = _read_xlsx_rows_stdlib(file_path)
+
+    # Se descartan las filas totalmente vacías (formato residual al final de la hoja).
+    return [row for row in rows if any(cell != "" for cell in row)]
+
+
+def _drop_phantom_columns(rows: List[List[str]]) -> List[List[str]]:
+    """Elimina columnas fantasma del índice de pandas ('Unnamed: 0' o header vacío).
+
+    Solo se descartan si están al principio de la fila o si todos sus valores son vacíos,
+    para que un CSV y un XLSX exportados desde el mismo DataFrame den exactamente lo mismo.
+    """
+    if not rows:
+        return rows
+    width = max(len(r) for r in rows)
+    phantom = []
+    for col in range(width):
+        header = rows[0][col].strip() if col < len(rows[0]) else ""
+        is_unnamed = (header == "" or header.lower().startswith("unnamed:"))
+        if not is_unnamed:
+            phantom.append(False)
+            continue
+        all_empty = all(col >= len(r) or r[col].strip() == "" for r in rows[1:])
+        phantom.append(col == 0 or all_empty)
+
+    if not any(phantom):
+        return rows
+    return [[cell for col, cell in enumerate(r) if col < len(phantom) and not phantom[col]] for r in rows]
+
+
 def load_dataset(file_path: str) -> Tuple[List[List[int]], List[str], Optional[List[str]], List[str]]:
     """Carga dataset Excel (.xlsx) o CSV (.csv)."""
     if not os.path.exists(file_path):
@@ -267,14 +451,8 @@ def load_dataset(file_path: str) -> Tuple[List[List[int]], List[str], Optional[L
     patient_ids = []
     
     if file_path.endswith('.xlsx'):
-        try:
-            import openpyxl
-            wb = openpyxl.load_workbook(file_path, data_only=True)
-            sheet = wb.active
-            rows = list(sheet.iter_rows(values_only=True))
-            all_rows = [[str(cell) if cell is not None else "" for cell in r] for r in rows if any(r)]
-        except ImportError:
-            raise ImportError("Se requiere la librería 'openpyxl' para leer archivos .xlsx.")
+        # openpyxl si está instalado; si no, lector stdlib (zipfile + xml.etree).
+        all_rows = _read_xlsx_rows(file_path)
     else:
         with open(file_path, mode='r', encoding='utf-8') as f:
             reader = csv.reader(f)
@@ -473,7 +651,8 @@ Sintaxis básica:
   python src/CarGross.py --input <archivo_dataset> [opciones]
 
 Argumentos Principales:
-  pos_input / --input <ruta> Ruta al dataset Excel (.xlsx) o CSV (.csv).
+  pos_input / --input <ruta> Ruta al dataset. Formato de entrada: CSV (.csv);
+                      también se admiten archivos Excel (.xlsx).
   -r, --rho <float>          Parámetro de vigilancia entre 0.0 y 1.0 (Defecto: 0.65).
   -o, --output <ruta>        Ruta del archivo CSV para exportar resultados globales.
   --save-txt <ruta>          Ruta para exportar el reporte descriptivo TXT.
@@ -491,21 +670,114 @@ a) ejecutar el Smoke Test de verificación:
    python src/CarGross.py --test
 
 b) Procesar Dataset de Entrenamiento:
-   python src/CarGross.py data/dataset_entrenamiento_ART1.xlsx -o results/res_entrenamiento.csv --save-txt results/res_entrenamiento.txt
+   python src/CarGross.py data/dataset_entrenamiento_ART1.csv -o results/res_entrenamiento.csv --save-txt results/res_entrenamiento.txt
 
 c) Procesar el Dataset de validacion:
-   python src/CarGross.py data/dataset_validacion_ART1.xlsx -o results/res_validacion.csv --save-txt results/res_validacion.txt
+   python src/CarGross.py data/dataset_validacion_ART1.csv -o results/res_validacion.csv --save-txt results/res_validacion.txt
 
 d) procesar con un parámetro de vigilancia más estricto (r=0.80):
-   python src/CarGross.py data/dataset_entrenamiento_ART1.xlsx -r 0.80 -o results/res_entrenamiento_rho080.csv --save-txt results/res_entrenamiento_rho080.txt 
+   python src/CarGross.py data/dataset_entrenamiento_ART1.csv -r 0.80 -o results/res_entrenamiento_rho080.csv --save-txt results/res_entrenamiento_rho080.txt 
 
 e) Modo Interactivo en Vivo (Solicita Nombre y Síntomas):
-   python src/CarGross.py data/dataset_entrenamiento_ART1.xlsx --interactive --save-txt results/informe_paciente.txt
+   python src/CarGross.py data/dataset_entrenamiento_ART1.csv --interactive --save-txt results/informe_paciente.txt
 
 f) Test de Estabilidad con Barajado Aleatorio:
-   python src/CarGross.py data/dataset_entrenamiento_ART1.xlsx --shuffle 5 --seed 42 -o results/estable.csv --save-txt results/estable.txt
+   python src/CarGross.py data/dataset_entrenamiento_ART1.csv --shuffle 5 --seed 42 -o results/estable.csv --save-txt results/estable.txt
 
    
+5. INSTALACIÓN
+--------------------------------------------------------------------------------
+Requisitos: Python 3.10 o superior.
+
+  git clone <url-del-repo>
+  python -m venv venv
+  .\\venv\\Scripts\\Activate.ps1        (en bash: source venv/bin/activate)
+  pip install -r requirements.txt
+
+Para verificar que quedó bien:
+
+  python src/CarGross.py --test
+
+Si imprime "TEST PASSED", todo listo.
+
+Nota: los .csv se leen con la librería estándar de Python, no hace falta
+instalar nada extra. openpyxl solo se usa para .xlsx y pandas/matplotlib solo
+para el notebook.
+
+6. DATASETS, CÓMO CORRERLOS Y SALIDA ESPERADA
+--------------------------------------------------------------------------------
+Los datasets incluidos están en formato CSV (el formato de entrada del
+módulo) y tienen 100 registros y 5 variables cada uno:
+
+  data/dataset_entrenamiento_ART1.csv     100 pacientes, 5 síntomas
+  data/dataset_validacion_ART1.csv        100 pacientes, 5 síntomas + etiqueta
+
+Cada CSV tiene: primera columna con el ID del paciente, una columna por
+síntoma con 1/0, y opcionalmente una última columna con la especialidad
+esperada (solo se usa para calcular la pureza).
+
+Comandos:
+
+  python src/CarGross.py data/dataset_entrenamiento_ART1.csv -o results/res_entrenamiento.csv --save-txt results/res_entrenamiento.txt
+  python src/CarGross.py data/dataset_validacion_ART1.csv -o results/res_validacion.csv --save-txt results/res_validacion.txt
+
+En consola se ve: la ruta del archivo y el rho, la cantidad de registros y
+síntomas cargados, el resumen con clusters formados (M), matching ratio y
+estabilidad (y pureza si el dataset trae etiquetas), y las plantillas de cada
+cluster con su especialidad sugerida.
+
+En archivos: el CSV (-o) deja una fila por paciente con ID, cluster, matching
+ratio y especialidad; el TXT (--save-txt) deja el reporte completo. Si la
+carpeta de salida no existe, se crea sola.
+
+Con rho 0.65 los resultados de referencia son:
+
+  - Entrenamiento: 14 clusters, matching ratio 0.9500.
+  - Validación: 12 clusters, matching ratio 0.9600, pureza 69%.
+
+El detalle de las corridas está en docs/informe.md.
+
+7. ALCANCES Y LIMITACIONES
+--------------------------------------------------------------------------------
+- Es una herramienta académica: no diagnostica pacientes. La especialidad que
+  sugiere es una traducción de la plantilla del cluster y hay que validarla
+  con un profesional de la salud.
+- Solo acepta valores 0 y 1. Si el archivo trae otra cosa, corta con [ERROR].
+- ART1 depende del orden de los registros: si se barajan los pacientes pueden
+  cambiar los clusters. Es una propiedad conocida del algoritmo (se puede
+  medir con --shuffle).
+- El rho se elige a mano. Con rho bajo los clusters quedan grandes y
+  mezclados; con rho alto quedan muchos y chicos.
+- El máximo de clusters está limitado por --max_cat (50 por defecto).
+- No hay interfaz gráfica ni guarda nada por sí solo: hay que pasar -o y/o
+  --save-txt para generar archivos.
+
+8. PREGUNTAS FRECUENTES
+--------------------------------------------------------------------------------
+P: ¿Por qué hay que hacer pip install si dice que no hay dependencias?
+R: Para los .csv no hace falta nada: se leen con la biblioteca estándar. El
+   pip install es solo para .xlsx (openpyxl) y para el notebook (pandas,
+   matplotlib).
+
+P: ¿Cómo elijo el rho?
+R: No hay un valor exacto. Con 0.65 los clusters quedan razonables y la
+   pureza da 69%. Si se sube mucho, se fragmentan los grupos; si se baja
+   mucho, se mezclan. Lo mejor es probar varios valores y mirar la cantidad
+   de clusters y la pureza.
+
+P: ¿Por qué cambian los clusters si barajo los datos?
+R: ART1 aprende registro por registro, y el orden en que llegan los pacientes
+   define qué plantillas se crean. Es propio del algoritmo, y por eso existe
+   el modo --shuffle para medirlo.
+
+P: ¿Puedo usar mis propios datos?
+R: Sí, con un CSV con ID, variables en 0/1 y (opcional) la etiqueta al final.
+   Si algún valor no es 0 o 1, la corrida corta con [ERROR].
+
+P: ¿Esto diagnostica pacientes?
+R: No, solo agrupa. Es un trabajo de la materia Redes Neuronales y la salida
+   tiene que ser revisada por un profesional médico.
+
 ================================================================================
 """
     print(man_text)
@@ -526,6 +798,19 @@ def run_smoke_test():
 
 
 def main():
+    """Punto de entrada con manejo de errores de corrida: todo fallo
+    previsible se informa con [ERROR] y una pista hacia --man / --help."""
+    try:
+        _run()
+    except (FileNotFoundError, FileExistsError, ValueError, ImportError, OSError) as exc:
+        motivo = str(exc).strip() or exc.__class__.__name__
+        print(f"[ERROR] {motivo}", file=sys.stderr)
+        print("Corrida interrumpida. Use --man para el manual de referencia "
+              "o --help para ver la sintaxis.", file=sys.stderr)
+        sys.exit(1)
+
+
+def _run():
     parser = argparse.ArgumentParser(
         description="CarGross.py - Red Neuronal ART1 (Carpenter-Grossberg) para Diagnóstico Médico.",
         add_help=True
