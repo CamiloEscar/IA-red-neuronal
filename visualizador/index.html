@@ -252,6 +252,7 @@ html.expo body { overflow: hidden; }
     <li><b>Resonancia</b>Si pasa, el paciente entra y la plantilla pasa a ser w AND x (puede perder síntomas, nunca gana). Si ninguna pasa, se crea una nueva igual al paciente.</li>
   </ol>
   <p class="mut">ρ alto = más exigente = más categorías chicas. ρ bajo = pocas categorías grandes. El orden de los pacientes importa. Los pacientes sin ningún síntoma no se aprenden: el código los manda a la categoría 0 y no toca la red.</p>
+  <p class="mut"><b>Cluster N</b> = cada grupo (categoría) que arma la red. El número es solo un índice por orden de creación, no tiene significado clínico. Los nombres de los pacientes son ficticios (el ID original, P001, etc., aparece al pasar el mouse).</p>
 </section>
 
 <section id="paso">
@@ -543,6 +544,10 @@ const f2 = n => n.toFixed(2);
 const f3 = n => n.toFixed(3);
 const nombresDe = x => SINT.filter((_, i) => x[i] === 1).join(', ') || 'ninguno';
 const celdas = (v, cls = {}) => v.map((b, i) => `<span class="cel ${b ? 'on' : ''} ${cls[i] || ''}" title="${SINT[i]}"></span>`).join('');
+// Nombres ficticios deterministas: P001..P100 -> 20 nombres x 7 apellidos (par único por CRT, 20 y 7 son coprimos)
+const NOM = ['Lucía','Mateo','Valentina','Santiago','Camila','Joaquín','Sofía','Tomás','Martina','Nicolás','Julieta','Facundo','Agustina','Lucas','Florencia','Bruno','Carolina','Ezequiel','Paula','Gonzalo'];
+const APE = ['González','Rodríguez','Fernández','López','Martínez','Pérez','Romero'];
+const pac = id => { const n = +(/^P(\d+)$/.exec(id) || [])[1]; return n > 0 ? NOM[(n - 1) % 20] + ' ' + APE[(n - 1) % 7] : id; };
 const matriz = v => '[' + v.join(', ') + ']';
 
 /* ---------- 1. paso a paso ---------- */
@@ -666,7 +671,7 @@ function progreso() {
   for (let q = 0; q < PAT.length; q++) {
     const a = st.asign[q];
     const cur = !st.fin && q === st.i;
-    m += `<i class="${a ? 'hay' : ''}${cur ? ' cur' : ''}" style="${a ? 'background:' + color(a.j) : ''}" title="${PAT[q].id}${a ? ' en C' + a.j : ''}"></i>`;
+    m += `<i class="${a ? 'hay' : ''}${cur ? ' cur' : ''}" style="${a ? 'background:' + color(a.j) : ''}" title="${pac(PAT[q].id)} (${PAT[q].id})${a ? ' en Cluster ' + a.j : ''}"></i>`;
   }
   $('mapa').innerHTML = m;
 }
@@ -686,7 +691,7 @@ function stepper(paso) {
   else if (a === 4) t = 'Resonancia';
   $('f3t').textContent = t;
   $('intento').textContent = paso && paso.k !== undefined && !st.fin
-    ? `Intento ${paso.k + 1} de ${st.tr.intentos.length} para ${PAT[st.i].id}` : '';
+    ? `Intento ${paso.k + 1} de ${st.tr.intentos.length} para ${pac(PAT[st.i].id)}` : '';
 }
 
 function dibujarRed(paso) {
@@ -695,7 +700,7 @@ function dibujarRed(paso) {
   const it = k !== undefined ? tr.intentos[k] : null;
   const filas = red.t.length + (red.t.length < red.M ? 1 : 0);
   const H = filas > 12 ? 30 : 38, top = 46, x0 = 150, rowX = 400, ySep = 54;
-  const cel0 = rowX + 84, cntX = cel0 + N * 22 + 6, scX = cntX + 62, rowW = scX + 56 - rowX;
+  const cel0 = rowX + 108, cntX = cel0 + N * 22 + 6, scX = cntX + 62, rowW = scX + 56 - rowX;
   const W = rowX + rowW + 8;
   const midY = Math.max(top + filas * H / 2, top + (N - 1) * ySep / 2 + 26);
   const cy1 = i => midY - (N - 1) * ySep / 2 + i * ySep;
@@ -794,7 +799,7 @@ function dibujarRed(paso) {
     const nodoSt = libre ? 'stroke:var(--mut)' : `stroke:${color(j)}${gana ? ';fill:' + color(j) : ''}`;
     s += `<g class="fila-f2 ${libre ? 'libre ' : ''}${cls}"><rect class="fondo" x="${rowX}" y="${y + 2}" width="${rowW}" height="${H - 4}" rx="8"/>` +
       `<circle class="nodo" cx="${nodoX}" cy="${y + H / 2}" r="9" style="${nodoSt}"/>` +
-      `<text x="${rowX + 32}" y="${y + H / 2 + 5}">${libre ? 'libre' : 'C' + j}</text>${cel}` +
+      `<text x="${rowX + 32}" y="${y + H / 2 + 5}">${libre ? 'libre' : 'Cluster ' + j}</text>${cel}` +
       `<text class="fino num" x="${cntX}" y="${y + H / 2 + 5}">${libre ? '' : (cnt[j] || 0)}</text>` +
       `<text class="fino num" x="${scX}" y="${y + H / 2 + 5}">${sc[j] !== undefined ? f3(sc[j]) : ''}</text></g>`;
   }
@@ -820,7 +825,7 @@ function dibujarRed(paso) {
   svg.innerHTML = s;
 }
 
-const nombre = it => it.nueva ? `la categoría libre (C${it.j})` : `C${it.j}`;
+const nombre = it => it.nueva ? `la categoría libre (Cluster ${it.j})` : `Cluster ${it.j}`;
 
 function narrar(paso) {
   const tr = st.tr, red = st.red;
@@ -830,22 +835,22 @@ function narrar(paso) {
     h = `<p>Con ρ = ${f2(st.rho)} los ${PAT.length} pacientes quedaron repartidos en ${red.t.length} categorías.</p><p>Movés ρ o reiniciás para ver otra corrida.</p>`;
   } else if (!paso) {
     tit = 'Listo para empezar';
-    h = `<p>La red todavía no tiene categorías. Apretá <b>Espacio</b> o <b>Siguiente paso</b> para presentar al primer paciente (${PAT[0].id}).</p><p>Con ρ = ${f2(st.rho)} la corrida completa termina con ${st.totalCats} categorías.</p>`;
+    h = `<p>La red todavía no tiene categorías. Apretá <b>Espacio</b> o <b>Siguiente paso</b> para presentar al primer paciente (${pac(PAT[0].id)}).</p><p>Con ρ = ${f2(st.rho)} la corrida completa termina con ${st.totalCats} categorías.</p>`;
   } else {
     const p = PAT[st.i], nx = norma(p.x);
     const it = paso.k !== undefined ? tr.intentos[paso.k] : null;
     const muertas = tr.intentos.slice(0, paso.k || 0).map(a => a.j);
     switch (paso.tipo) {
       case 'vacio':
-        tit = `${p.id} no tiene síntomas`;
+        tit = `${pac(p.id)} no tiene síntomas`;
         h = '<p>El código lo manda a la categoría 0 con similitud 1 y no cambia nada en la red.</p>';
         break;
       case 'elige': {
         const vivas = tr.orden.filter(o => !muertas.includes(o.j));
         const g = vivas[0];
-        const rank = vivas.map(o => `${o.nueva ? 'libre' : 'C' + o.j} (${f3(o.score)})`).join(' &gt; ');
+        const rank = vivas.map(o => `${o.nueva ? 'libre' : 'Cluster ' + o.j} (${f3(o.score)})`).join(' &gt; ');
         if (paso.k === 0) {
-          tit = `Entra ${p.id}`;
+          tit = `Entra ${pac(p.id)}`;
           h = `<p>Síntomas: <b>${nombresDe(p.x)}</b>. x = <span class="mono">${matriz(p.x)}</span>.</p>` +
             `<p>Cada categoría recibe una señal desde F1 y saca un puntaje según cuánto se parece al paciente. ` +
             (red.t.length ? `Gana la de mayor puntaje: <b>${nombre(g)}</b>.` : 'Todavía no hay ninguna, así que compite sola la categoría libre.') + '</p>';
@@ -858,8 +863,8 @@ function narrar(paso) {
       }
       case 'compara': {
         const coin = SINT.filter((_, i) => it.T[i] === 1);
-        tit = `${it.nueva ? 'La libre' : 'C' + it.j} devuelve su plantilla`;
-        h = `<p>La categoría manda hacia F1 los síntomas que recuerda (violeta). Los que también tiene el paciente se prenden en verde: <b>${coin.join(', ') || 'ninguno'}</b>.</p>`;
+        tit = `${it.nueva ? 'La libre' : 'Cluster ' + it.j} devuelve su plantilla`;
+        h = `<p>La categoría manda hacia F1 los síntomas que recuerda. Los que también tiene el paciente se prenden en verde: <b>${coin.join(', ') || 'ninguno'}</b>.</p>`;
         if (it.nueva) h += '<p>La libre tiene todo en 1, así que coincide con todos los síntomas del paciente.</p>';
         calc = tablaTest(p.x, it, 1.4);
         break;
@@ -872,14 +877,14 @@ function narrar(paso) {
         break;
       case 'reset': {
         const sig = tr.intentos[paso.k + 1];
-        tit = `Reset: C${it.j} queda afuera`;
+        tit = `Reset: Cluster ${it.j} queda afuera`;
         h = `<p><span class="tag reset">reset</span> Con ${f2(it.ratio)} no llega a ρ = ${f2(st.rho)}. Se apaga solo para este paciente y la señal pasa a <b>${sig ? nombre(sig) : 'la siguiente'}</b>.</p>`;
         calc = tablaTest(p.x, it, 0);
         break;
       }
       case 'resonancia':
-        tit = `Resonancia con C${it.j}`;
-        h = `<p><span class="tag res">resonancia</span> Con ${f2(it.ratio)} pasa la vigilancia. <b>${p.id}</b> entra a <b>C${it.j}</b> y la red se estabiliza.</p><p class="mut">Falta el aprendizaje: ajustar la plantilla.</p>`;
+        tit = `Resonancia con Cluster ${it.j}`;
+        h = `<p><span class="tag res">resonancia</span> Con ${f2(it.ratio)} pasa la vigilancia. <b>${pac(p.id)}</b> entra a <b>Cluster ${it.j}</b> y la red se estabiliza.</p><p class="mut">Falta el aprendizaje: ajustar la plantilla.</p>`;
         calc = tablaTest(p.x, it, 0);
         break;
       case 'nueva':
@@ -888,12 +893,12 @@ function narrar(paso) {
         break;
       case 'aprende':
         if (tr.nueva) {
-          tit = `Nace la categoría C${tr.j}`;
+          tit = `Nace la categoría Cluster ${tr.j}`;
           h = `<p>Su plantilla es igual al paciente: <span class="mono">${matriz(tr.tNuevo)}</span>.</p>` +
             (red.t.length < red.M ? '<p class="mut">Queda otra categoría libre disponible abajo.</p>' : '');
         } else {
           const perd = SINT.filter((_, i) => tr.tViejo[i] === 1 && tr.tNuevo[i] === 0);
-          tit = `Aprendizaje: se ajusta la plantilla de C${tr.j}`;
+          tit = `Aprendizaje: se ajusta la plantilla de Cluster ${tr.j}`;
           h = '<p>La plantilla pasa a w AND x. ' + (perd.length
             ? `Pierden el 1: <b>${perd.join(', ')}</b> (rojo). Una plantilla solo puede perder síntomas, nunca ganar.`
             : 'No cambia ningún bit: el paciente ya estaba contenido en la plantilla.') + '</p>';
@@ -937,8 +942,8 @@ function listaCats(red, items, destacar, nace = -1) {
   let h = '';
   for (let j = 0; j < red.t.length; j++) {
     const mios = items.filter(a => a.j === j);
-    const ids = mios.map(a => `<span class="chip">${a.id}</span>`).join('');
-    h += `<div class="cat ${destacar === j ? 'dest' : ''} ${nace === j ? 'nace' : ''}" style="--c:${color(j)}"><b>C${j}</b>${celdas(red.t[j])} <span class="mut">${nombresDe(red.t[j])}, ${mios.length} pac.</span><div class="chips" style="margin-top:4px">${ids}</div></div>`;
+    const ids = mios.map(a => `<span class="chip" title="${a.id}">${pac(a.id)}</span>`).join('');
+    h += `<div class="cat ${destacar === j ? 'dest' : ''} ${nace === j ? 'nace' : ''}" style="--c:${color(j)}"><b>Cluster ${j}</b>${celdas(red.t[j])} <span class="mut">${nombresDe(red.t[j])}, ${mios.length} pac.</span><div class="chips" style="margin-top:4px">${ids}</div></div>`;
   }
   return h || '<p class="mut">sin categorías</p>';
 }
@@ -949,7 +954,7 @@ const cmp = { cards: [], timer: null };
 function detenerCmp() { if (cmp.timer) clearInterval(cmp.timer); cmp.timer = null; }
 
 function pintarCmp(c, red, items, nace) {
-  const tira = PAT.map((p, q) => items[q] ? `<i class="hay" style="background:${color(items[q].j)}" title="${p.id}"></i>` : '<i></i>').join('');
+  const tira = PAT.map((p, q) => items[q] ? `<i class="hay" style="background:${color(items[q].j)}" title="${pac(p.id)} (${p.id})"></i>` : '<i></i>').join('');
   const fin = items.length === PAT.length;
   const med = fin ? ` Similitud media ${(c.r.ratios.reduce((a, b) => a + b, 0) / c.r.ratios.length).toFixed(4)}.` : '';
   c.caja.innerHTML = `<div class="cmp-h"><h3>ρ = ${f2(c.rho)}</h3><span class="big">${red.t.length}</span><span class="mut">categorías, ${items.length} de ${PAT.length} pacientes.${med}</span></div>` +
@@ -1015,11 +1020,11 @@ function mostrarJ() {
     h = '<p class="veredicto">Sin síntomas: ART1 lo manda a la categoría 0 y no modifica nada.</p>';
   } else {
     const w = tr.intentos[tr.intentos.length - 1];
-    h = `<p class="veredicto">${w.nueva ? `Ninguna categoría existente pasa la vigilancia: se crearía la <b>C${w.j}</b> nueva.` : `Entra a la <b>C${w.j}</b> (similitud ${f2(w.ratio)} &ge; ρ ${f2(jg.red.rho)}).`}</p>`;
+    h = `<p class="veredicto">${w.nueva ? `Ninguna categoría existente pasa la vigilancia: se crearía el <b>Cluster ${w.j}</b> nuevo.` : `Entra al <b>Cluster ${w.j}</b> (similitud ${f2(w.ratio)} &ge; ρ ${f2(jg.red.rho)}).`}</p>`;
     h += `<p class="mut">La red prueba las categorías en orden de puntaje y se queda con la primera que supera ρ. Síntomas del paciente: ${nombresDe(jg.x)}.</p>`;
     h += '<table><tr><th>Orden</th><th>Categoría</th><th class="num">Puntaje</th><th class="num">|x AND w|</th><th class="num">Similitud</th><th>Resultado</th></tr>';
     tr.intentos.forEach((it, k) => {
-      h += `<tr><td>${k + 1}</td><td>${it.nueva ? 'libre (C' + it.j + ')' : 'C' + it.j}</td><td class="num">${f3(it.score)}</td><td class="num">${it.nT} de ${norma(jg.x)}</td><td class="num">${f2(it.ratio)} ${it.pasa ? '&ge;' : '&lt;'} ${f2(jg.red.rho)}</td><td>${it.pasa ? '<span class="tag res">pasa</span>' : '<span class="tag reset">reset</span>'}</td></tr>`;
+      h += `<tr><td>${k + 1}</td><td>${it.nueva ? 'libre (Cluster ' + it.j + ')' : 'Cluster ' + it.j}</td><td class="num">${f3(it.score)}</td><td class="num">${it.nT} de ${norma(jg.x)}</td><td class="num">${f2(it.ratio)} ${it.pasa ? '&ge;' : '&lt;'} ${f2(jg.red.rho)}</td><td>${it.pasa ? '<span class="tag res">pasa</span>' : '<span class="tag reset">reset</span>'}</td></tr>`;
     });
     h += '</table>';
   }
