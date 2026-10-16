@@ -1,0 +1,1105 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ART1 paso a paso</title>
+<style>
+:root {
+  --bg: #eceff3; --card: #ffffff; --txt: #121a23; --mut: #4a5663; --line: #c9d0d8; --soft: #f1f4f8;
+  --acc: #1b5fb0; --td: #7437c0; --ok: #12803e; --bad: #c42b2b; --warn: #a86500; --on: #ffffff;
+  --ring: rgba(27, 95, 176, .22); --sombra: 0 1px 2px rgba(18, 26, 35, .08);
+  --K: 1;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1217; --card: #171d25; --txt: #eef1f5; --mut: #a8b3bf; --line: #333e4a; --soft: #202832;
+    --acc: #6aaeff; --td: #b99dff; --ok: #4fd683; --bad: #ff7b6c; --warn: #f2bb4c; --on: #0b0f14;
+    --ring: rgba(106, 174, 255, .3); --sombra: none;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1217; --card: #171d25; --txt: #eef1f5; --mut: #a8b3bf; --line: #333e4a; --soft: #202832;
+  --acc: #6aaeff; --td: #b99dff; --ok: #4fd683; --bad: #ff7b6c; --warn: #f2bb4c; --on: #0b0f14;
+  --ring: rgba(106, 174, 255, .3); --sombra: none;
+}
+* { box-sizing: border-box; }
+html { font-size: 17px; }
+html.expo { font-size: 21px; }
+body { margin: 0; background: var(--bg); color: var(--txt); font: 1rem/1.55 system-ui, "Segoe UI", Roboto, sans-serif; }
+header, main { max-width: 1320px; margin: 0 auto; padding: 0 20px; }
+header { padding-top: 26px; }
+h1 { margin: 0 0 4px; font-size: 2rem; letter-spacing: -.01em; }
+h2 { margin: 0 0 12px; font-size: 1.4rem; }
+h3 { margin: 12px 0 6px; font-size: 1.05rem; }
+section { margin: 36px 0; }
+p { margin: 6px 0; }
+.mut { color: var(--mut); font-size: .92rem; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; box-shadow: var(--sombra); }
+.fila { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-bottom: 12px; }
+button { font: inherit; font-weight: 600; min-height: 2.5rem; padding: .4rem 1rem; border: 1.5px solid var(--line); border-radius: 9px; background: var(--soft); color: var(--txt); cursor: pointer; }
+button:hover { border-color: var(--acc); }
+button:focus-visible, input:focus-visible { outline: 3px solid var(--acc); outline-offset: 2px; }
+button.pri { background: var(--acc); color: var(--on); border-color: var(--acc); }
+button[aria-pressed="true"] { background: var(--acc); color: var(--on); border-color: var(--acc); }
+input[type=range] { accent-color: var(--acc); }
+input[type=number] { font: inherit; width: 5em; padding: 5px 8px; background: var(--card); color: var(--txt); border: 1.5px solid var(--line); border-radius: 8px; }
+label { display: inline-flex; gap: 8px; align-items: center; }
+code, .mono { font-family: ui-monospace, Consolas, monospace; font-size: .9em; }
+kbd { font: 600 .85em ui-monospace, Consolas, monospace; padding: 1px 7px; border: 1.5px solid var(--line); border-bottom-width: 3px; border-radius: 6px; background: var(--soft); }
+.tag { display: inline-block; padding: 1px 9px; border-radius: 10px; font-size: .8rem; font-weight: 700; color: var(--on); }
+.tag.reset { background: var(--bad); } .tag.res { background: var(--ok); } .tag.nueva { background: var(--warn); } .tag.comp { background: var(--acc); }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+th, td { border-bottom: 1px solid var(--line); padding: 4px 6px; text-align: left; }
+th { font-weight: 600; }
+#resJ, #calc { overflow-x: auto; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.cel { display: inline-block; width: 14px; height: 14px; border: 1.5px solid var(--mut); border-radius: 3px; margin-right: 2px; vertical-align: middle; }
+.cel.on { background: var(--acc); border-color: var(--acc); }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { font-size: .75rem; padding: 0 6px; border-radius: 4px; border: 1px solid var(--line); background: var(--card); white-space: nowrap; }
+
+/* como funciona */
+.pasos5 { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin: 12px 0; padding: 0; list-style: none; counter-reset: p; }
+.pasos5 li { counter-increment: p; background: var(--soft); border-radius: 10px; padding: 12px 14px; }
+.pasos5 li::before { content: counter(p); display: inline-grid; place-items: center; width: 1.7rem; height: 1.7rem; border-radius: 50%; background: var(--acc); color: var(--on); font-weight: 700; margin-bottom: 6px; }
+.pasos5 b { display: block; }
+
+/* barra de control y progreso */
+.barra { position: relative; }
+.ctr { margin-bottom: 10px; }
+.ctr .sep { flex: 1; }
+.prog { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.prog b { font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+.pbar { flex: 1 1 160px; height: .65rem; background: var(--soft); border-radius: 99px; overflow: hidden; border: 1px solid var(--line); }
+.pbar i { display: block; height: 100%; width: 0; background: var(--acc); transition: width calc(.4s * var(--K)); }
+.mapa { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 10px; }
+.mapa i { width: .95rem; height: .95rem; border-radius: 3px; background: var(--soft); border: 1px solid var(--line); }
+.mapa i.hay { border-color: transparent; }
+.mapa i.cur { outline: 3px solid var(--txt); outline-offset: 1px; }
+
+/* stepper de fases */
+.fases { list-style: none; display: flex; gap: 8px; padding: 0; margin: 14px 0 0; flex-wrap: wrap; align-items: stretch; }
+.fases li { flex: 1 1 10rem; display: flex; align-items: center; gap: 10px; padding: 10px 14px; border: 2px solid var(--line); border-radius: 12px; background: var(--card); color: var(--mut); font-weight: 600; transition: border-color calc(.3s * var(--K)), background calc(.3s * var(--K)); }
+.fn { flex: none; width: 1.8rem; height: 1.8rem; border-radius: 50%; display: grid; place-items: center; background: var(--soft); font-size: .9rem; border: 1px solid var(--line); }
+.fases li.hecha { color: var(--txt); }
+.fases li.hecha .fn { background: var(--ok); color: var(--on); border-color: var(--ok); }
+.fases li.activa { color: var(--txt); background: var(--soft); border-color: var(--acc); box-shadow: 0 0 0 4px var(--ring); }
+.fases li.activa .fn { background: var(--acc); color: var(--on); border-color: var(--acc); }
+.fases li.activa[data-res="ok"] { border-color: var(--ok); }
+.fases li.activa[data-res="ok"] .fn { background: var(--ok); border-color: var(--ok); }
+.fases li.activa[data-res="no"] { border-color: var(--bad); }
+.fases li.activa[data-res="no"] .fn { background: var(--bad); border-color: var(--bad); }
+.intento { min-height: 1.5rem; margin: 6px 2px 0; color: var(--mut); font-weight: 600; }
+
+/* escenario */
+.stage { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 14px; margin-top: 10px; align-items: start; }
+@media (max-width: 960px) { .stage { grid-template-columns: minmax(0, 1fr); } }
+.lado { display: grid; gap: 14px; min-width: 0; }
+.svgwrap svg { width: 100%; height: auto; display: block; }
+@media (max-width: 600px) { .svgwrap { overflow-x: auto; } .svgwrap svg { min-width: 560px; } .fases li { flex-basis: 100%; } }
+.leyenda { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 8px; font-size: .85rem; color: var(--mut); }
+.leyenda i { display: inline-block; width: .8rem; height: .8rem; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+.atajos { margin: 12px 2px 0; color: var(--mut); font-size: .88rem; line-height: 2; }
+.atajos span { margin-right: 14px; white-space: nowrap; }
+
+/* narracion */
+.narr { min-height: 10.5rem; border-left: 6px solid var(--acc); }
+.narr h3 { margin: 0 0 .4rem; font-size: 1.4rem; line-height: 1.25; }
+.narr .nt { font-size: 1.1rem; }
+.narr .nt p { margin: .4rem 0; }
+.tarde { animation: ver calc(.4s * var(--K)) calc(1.6s * var(--K)) both; }
+@keyframes ver { from { opacity: 0; } to { opacity: 1; } }
+
+/* medidor de vigilancia */
+.gtrack { position: relative; height: 1.5rem; margin: 1.9rem 0 .5rem; background: var(--soft); border: 1.5px solid var(--line); border-radius: 99px; }
+.gfill { position: absolute; left: 0; top: 0; bottom: 0; width: var(--r, 0%); border-radius: 99px; background: var(--vc, var(--acc)); }
+.gfill.ok { --vc: var(--ok); } .gfill.no { --vc: var(--bad); }
+.gfill.anima { animation: llenar calc(1.2s * var(--K)) calc(.3s * var(--K)) ease-out both; }
+@keyframes llenar { 0% { width: 0; background: var(--acc); } 75% { width: var(--r); background: var(--acc); } 100% { width: var(--r); background: var(--vc); } }
+.grho { position: absolute; top: -.35rem; bottom: -.35rem; width: 4px; margin-left: -2px; background: var(--txt); border-radius: 2px; }
+.grho span { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); white-space: nowrap; font-weight: 700; font-size: .9rem; padding-bottom: 2px; }
+.grho.izq span { transform: none; left: -2px; } .grho.der span { transform: translateX(-100%); left: 6px; }
+.gtxt { font-size: 1.02rem; }
+.gtxt .tag { font-size: .9rem; }
+
+/* tabla x AND w */
+td.hit { background: color-mix(in srgb, var(--ok) 32%, transparent); font-weight: 700; animation: marca calc(.5s * var(--K)) calc(var(--dl, 0s) * var(--K)) both; }
+td.lost { background: color-mix(in srgb, var(--bad) 32%, transparent); font-weight: 700; }
+@keyframes marca { from { background: transparent; } }
+
+/* svg */
+svg text { fill: var(--txt); font: 600 15px system-ui, sans-serif; }
+svg text.fino { fill: var(--mut); font-size: 12.5px; font-weight: 500; }
+svg text.num { font-variant-numeric: tabular-nums; }
+.lin { fill: none; stroke-linecap: round; opacity: 0; animation: aparece calc(.45s * var(--K)) ease-out both; animation-delay: calc(var(--dl, 0s) * var(--K)); }
+@keyframes aparece { to { opacity: var(--o, 1); } }
+.lin.sube { stroke: var(--acc); } .lin.baja { stroke: var(--td); } .lin.salta { stroke: var(--warn); stroke-dasharray: 5 4; }
+.pulso { opacity: 0; animation: viaja calc(1.1s * var(--K)) ease-in-out both; animation-delay: calc(var(--dl, 0s) * var(--K)); }
+.pulso.sube { fill: var(--acc); } .pulso.baja { fill: var(--td); } .pulso.salta { fill: var(--warn); }
+@keyframes viaja { 0% { opacity: 0; transform: translate(0, 0); } 12% { opacity: 1; } 88% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)); } }
+.onda { fill: none; stroke: var(--ok); stroke-width: 3; transform-box: fill-box; transform-origin: center; opacity: 0; animation: onda calc(1s * var(--K)) ease-out both; animation-delay: calc(var(--dl, 0s) * var(--K)); }
+@keyframes onda { 0% { opacity: .95; transform: scale(.6); } 100% { opacity: 0; transform: scale(2.8); } }
+.quieto .lin { animation: none; opacity: var(--o, 1); }
+.quieto .f1 circle { animation: none; }
+
+.f1 circle { fill: var(--card); stroke: var(--mut); stroke-width: 2.5; transform-box: fill-box; transform-origin: center; }
+.f1 circle.on { fill: var(--acc); stroke: var(--acc); }
+.f1 circle.match { stroke: var(--ok); stroke-width: 5; }
+.f1 circle.miss { stroke: var(--bad); stroke-width: 5; }
+.f1 circle.match, .f1 circle.miss { animation: anillo calc(.8s * var(--K)) calc(var(--dl, 0s) * var(--K)) both; }
+@keyframes anillo { 0% { stroke: var(--mut); stroke-width: 2.5; } 60% { stroke-width: 11; } 100% { stroke-width: 5; } }
+.f1 circle.entra { animation: entra calc(.55s * var(--K)) ease-out both; }
+@keyframes entra { 0% { transform: scale(.3); } 70% { transform: scale(1.2); } 100% { transform: scale(1); } }
+.f1 text.v { fill: var(--txt); }
+.f1 text.v.on { fill: var(--on); }
+
+.fila-f2 { transform-box: fill-box; transform-origin: left center; }
+.fila-f2 rect.fondo { fill: var(--soft); stroke: var(--line); stroke-width: 1.5; }
+.fila-f2 circle.nodo { fill: var(--card); stroke-width: 3; }
+.fila-f2.libre rect.fondo { fill: none; stroke-dasharray: 5 4; }
+.fila-f2.comp rect.fondo { stroke: var(--warn); stroke-width: 3.5; fill: var(--soft); }
+.fila-f2.off { opacity: .38; }
+.fila-f2.off rect.fondo { stroke: var(--bad); }
+.fila-f2.resto { opacity: .62; }
+.fila-f2.win rect.fondo { stroke: var(--ok); stroke-width: 3.5; fill: var(--soft); }
+.fila-f2.elegida rect.fondo { animation: elegir calc(.6s * var(--K)) ease-out calc(1.4s * var(--K)) both; }
+@keyframes elegir { to { stroke: var(--warn); stroke-width: 3.5; } }
+.fila-f2.pierde { animation: pierde calc(.6s * var(--K)) ease calc(1.4s * var(--K)) both; }
+@keyframes pierde { to { opacity: .42; } }
+.fila-f2.offNow { animation: apagar calc(1.2s * var(--K)) ease-out both; }
+.fila-f2.offNow rect.fondo { stroke: var(--bad); stroke-width: 3.5; animation: rojo calc(.8s * var(--K)) both; }
+@keyframes apagar { 0% { opacity: 1; transform: translateX(0); } 10% { transform: translateX(-8px); } 22% { transform: translateX(8px); } 34% { transform: translateX(-6px); } 46% { transform: translateX(4px); } 58% { transform: translateX(0); opacity: 1; } 100% { opacity: .38; } }
+@keyframes rojo { from { fill: color-mix(in srgb, var(--bad) 55%, var(--soft)); } to { fill: var(--soft); } }
+.fila-f2.winNow rect.fondo { stroke: var(--ok); stroke-width: 3.5; animation: destella calc(1.1s * var(--K)) both; }
+@keyframes destella { 0% { fill: color-mix(in srgb, var(--ok) 55%, var(--soft)); } 100% { fill: var(--soft); } }
+.fila-f2.nace { animation: nace calc(1s * var(--K)) cubic-bezier(.2, 1.3, .4, 1) both; }
+@keyframes nace { 0% { transform: scale(.25); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+.fila-f2.nace rect.fondo { animation: destella calc(1.4s * var(--K)) both; }
+.sc { fill: none; stroke: var(--mut); stroke-width: 1.5; transform-box: fill-box; transform-origin: center; }
+.sc.on { fill: var(--acc); stroke: var(--acc); }
+.sc.vac { stroke-dasharray: 2 2; }
+.sc.perdi { animation: perdi calc(1.3s * var(--K)) calc(var(--dl, 0s) * var(--K)) both; }
+@keyframes perdi { 0% { fill: var(--acc); stroke: var(--acc); transform: scale(1); } 40% { fill: var(--bad); stroke: var(--bad); transform: scale(1.6); } 100% { fill: transparent; stroke: var(--mut); transform: scale(1); } }
+.sc.nacen { animation: nacen calc(.7s * var(--K)) calc(var(--dl, 0s) * var(--K)) both; }
+@keyframes nacen { 0% { transform: scale(0); fill: var(--ok); stroke: var(--ok); } 60% { transform: scale(1.4); fill: var(--ok); stroke: var(--ok); } 100% { transform: scale(1); } }
+
+/* comparativa y jugá */
+.grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+.cmp-h { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.cmp-h h3 { margin: 0; }
+.cmp-h .big { font-size: 2.2rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.tira { display: flex; flex-wrap: wrap; gap: 2px; margin: 10px 0 6px; }
+.tira i { width: 9px; height: 9px; border-radius: 2px; background: var(--soft); border: 1px solid var(--line); }
+.tira i.hay { border-color: transparent; }
+.cats { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; }
+.cat { border-left: 5px solid var(--c, var(--line)); background: var(--soft); border-radius: 0 10px 10px 0; padding: 8px 12px; }
+.cat.dest { outline: 3px solid var(--ok); }
+.cat.nace { animation: nacer calc(.9s * var(--K)) ease-out both; }
+@keyframes nacer { 0% { opacity: 0; transform: scale(.9); background: color-mix(in srgb, var(--ok) 45%, var(--soft)); } 100% { opacity: 1; transform: none; } }
+.cat b { margin-right: 6px; }
+.bits { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.veredicto { font-size: 1.1rem; margin: 8px 0; }
+.flash { animation: flash calc(.7s * var(--K)) ease-out; }
+@keyframes flash { from { background: color-mix(in srgb, var(--acc) 22%, transparent); } }
+
+/* modo exposicion */
+html.expo body { overflow: hidden; }
+.expo header, .expo #como, .expo #comp, .expo #jugar, .expo #paso > h2, .expo .mapa-txt { display: none; }
+.expo main { max-width: none; padding: 0 22px; }
+.expo #paso { margin: 0; height: 100vh; display: flex; flex-direction: column; padding: 12px 0; gap: 10px; }
+.expo .barra { position: static; padding: 10px 14px; }
+.expo .ctr { margin-bottom: 8px; }
+.expo button { min-height: 2.9rem; padding: .4rem 1.2rem; }
+.expo .mapa { margin-top: 8px; gap: 2px; }
+.expo .mapa i { width: .66rem; height: .66rem; }
+.expo #bTema { display: none; }
+.expo #rho { width: 130px !important; }
+.expo .fases { margin-top: 0; }
+.expo .stage { flex: 1; min-height: 0; margin-top: 0; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); align-items: stretch; }
+.expo #redCard { display: flex; flex-direction: column; min-height: 0; }
+.expo .svgwrap { flex: 1; min-height: 0; }
+.expo .svgwrap svg { height: 100%; }
+.expo .lado { min-height: 0; overflow: auto; align-content: start; }
+.expo .narr { min-height: 0; }
+.expo .atajos { margin: 0; line-height: 1.7; }
+.expo .leyenda { font-size: .75rem; margin-top: 4px; }
+.expo .intento { margin: 0; min-height: 0; }
+.expo .gtxt { font-size: 1rem; }
+.expo table { font-size: .8rem; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>ART1 paso a paso</h1>
+  <p class="mut">Visualizador del TFI. Usa el mismo algoritmo que <code>src/CarGross.py</code> y los 100 pacientes de <code>dataset_entrenamiento_ART1.csv</code>.</p>
+</header>
+
+<main>
+<section id="como" class="card">
+  <h2>Cómo funciona ART1</h2>
+  <p>Es una red que agrupa sin etiquetas. Cada paciente es un vector de 0 y 1 (tiene o no tiene cada síntoma) y la red los va acomodando de a uno en categorías. Cada categoría guarda una plantilla (los síntomas que comparten todos sus pacientes).</p>
+  <ol class="pasos5">
+    <li><b>Entra el paciente</b>Un vector <b style="display:inline">x</b> llega a la capa <b style="display:inline">F1</b>, con un nodo por síntoma.</li>
+    <li><b>Elección</b>Cada categoría de F2 da un puntaje: cuánto se parece su plantilla al paciente (pesos bottom-up). Compite la de mayor puntaje; si empatan, la de menor número.</li>
+    <li><b>Vigilancia</b>Se calcula |x AND w| / |x|: qué parte de los síntomas del paciente está en la plantilla. Si es mayor o igual a <b style="display:inline">ρ</b>, pasa.</li>
+    <li><b>Reset</b>Si no pasa, esa categoría se apaga solo para este paciente y compite la siguiente.</li>
+    <li><b>Resonancia</b>Si pasa, el paciente entra y la plantilla pasa a ser w AND x (puede perder síntomas, nunca gana). Si ninguna pasa, se crea una nueva igual al paciente.</li>
+  </ol>
+  <p class="mut">ρ alto = más exigente = más categorías chicas. ρ bajo = pocas categorías grandes. El orden de los pacientes importa. Los pacientes sin ningún síntoma no se aprenden: el código los manda a la categoría 0 y no toca la red.</p>
+</section>
+
+<section id="paso">
+  <h2>1. Paso a paso</h2>
+  <div class="card barra">
+    <div class="fila ctr">
+      <button id="bAtras">&larr; Atrás</button>
+      <button id="bPaso" class="pri">Siguiente paso</button>
+      <button id="bPat">Siguiente patrón</button>
+      <button id="bAuto" aria-pressed="false">Auto-play</button>
+      <button id="bReset">Reiniciar</button>
+      <label>Velocidad <input id="vel" type="range" min="1" max="10" value="5"> <b id="velTxt">5</b></label>
+      <label>ρ = <b id="rhoTxt">0.65</b> <input id="rho" type="range" min="0" max="1" step="0.01" value="0.65" style="width:180px"></label>
+      <span class="sep"></span>
+      <button id="bTema">Tema claro/oscuro</button>
+      <button id="bExpo">Modo exposición</button>
+    </div>
+    <div class="prog">
+      <span>Paciente <b id="pN">0</b> / <span id="pTot">100</span></span>
+      <div class="pbar" role="progressbar" aria-label="Avance"><i id="pBarra"></i></div>
+      <span>Categorías creadas <b id="pCats">0</b></span>
+      <span class="mut" id="pFin"></span>
+    </div>
+    <div class="mapa" id="mapa" aria-label="Pacientes procesados, coloreados por categoría"></div>
+  </div>
+
+  <ol class="fases" id="fases">
+    <li id="f0"><span class="fn">1</span>Elección</li>
+    <li id="f1"><span class="fn">2</span>Comparación</li>
+    <li id="f2"><span class="fn">3</span>Vigilancia</li>
+    <li id="f3"><span class="fn">4</span><span id="f3t">Resonancia / Reset</span></li>
+    <li id="f4"><span class="fn">5</span>Aprendizaje</li>
+  </ol>
+  <div class="intento" id="intento"></div>
+
+  <div class="stage">
+    <div class="card" id="redCard">
+      <div class="svgwrap"><svg id="red" role="img" aria-label="Capas F1 y F2"></svg></div>
+      <div class="leyenda">
+        <span><i style="background:var(--acc)"></i>bottom-up (elección)</span>
+        <span><i style="background:var(--td)"></i>top-down (plantilla)</span>
+        <span><i style="background:var(--ok)"></i>coincide</span>
+        <span><i style="background:var(--bad)"></i>no coincide o descartada</span>
+      </div>
+    </div>
+    <div class="lado">
+      <div class="card narr" aria-live="polite"><h3 id="nTit"></h3><div class="nt" id="nTxt"></div></div>
+      <div class="card"><div id="gauge"></div></div>
+      <div class="card" id="calcCard"><div id="calc"></div></div>
+    </div>
+  </div>
+  <p class="atajos">
+    <span><kbd>Espacio</kbd> o <kbd>&rarr;</kbd> siguiente paso</span>
+    <span><kbd>&larr;</kbd> paso atrás</span>
+    <span><kbd>&darr;</kbd> siguiente patrón</span>
+    <span><kbd>P</kbd> auto-play</span>
+    <span><kbd>R</kbd> reiniciar</span>
+    <span><kbd>+</kbd> <kbd>-</kbd> velocidad</span>
+    <span><kbd>E</kbd> exposición</span>
+    <span><kbd>Esc</kbd> salir</span>
+  </p>
+</section>
+
+<section id="comp">
+  <h2>2. Comparar valores de ρ</h2>
+  <p class="mut">Mismos 100 pacientes, mismo orden, tres vigilancias distintas. Cada recuadro de abajo es una categoría con su plantilla y los pacientes que cayeron ahí.</p>
+  <div class="fila">
+    <label>ρ A <input type="number" class="rc" min="0" max="1" step="0.05" value="0.3"></label>
+    <label>ρ B <input type="number" class="rc" min="0" max="1" step="0.05" value="0.6"></label>
+    <label>ρ C <input type="number" class="rc" min="0" max="1" step="0.05" value="0.9"></label>
+    <button id="bAnim" class="pri">Ver cómo se forman</button>
+    <button id="bFinal">Mostrar el final</button>
+  </div>
+  <div class="grid3" id="compRes"></div>
+</section>
+
+<section id="jugar">
+  <h2>3. Jugá con la red</h2>
+  <div class="card">
+    <p>Armá un paciente (mismo formato que el CSV: un 1 o un 0 por síntoma) y mirá cómo lo clasifica la red ya entrenada con los 100 pacientes. Clasificar no cambia la red.</p>
+    <div class="fila">
+      <label>ρ = <b id="rhoJTxt">0.65</b> <input id="rhoJ" type="range" min="0" max="1" step="0.01" value="0.65" style="width:220px"></label>
+    </div>
+    <div class="bits" id="bitsJ"></div>
+    <p class="mut">Fila CSV: <code id="csvJ"></code></p>
+    <div class="fila">
+      <button id="bAprende">Aprender este patrón</button>
+      <button id="bRe">Volver a entrenar</button>
+      <span class="mut" id="infoJ"></span>
+    </div>
+    <div id="resJ"></div>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <h3 style="margin-top:0">Categorías de la red</h3>
+    <div class="cats" id="catsJ"></div>
+  </div>
+</section>
+</main>
+
+<script>
+const CSV = `Paciente,Tos,Moco,Fiebre,Dolor abdominal,Presión alta
+P015,1,0,0,0,0
+P075,0,0,1,0,0
+P021,1,0,0,0,1
+P082,1,1,0,0,0
+P068,0,1,1,0,0
+P064,0,0,1,0,0
+P057,0,0,0,1,0
+P048,0,0,1,1,0
+P066,0,1,0,0,0
+P094,1,0,0,0,1
+P097,0,1,0,0,0
+P079,0,0,1,0,1
+P041,0,0,0,1,0
+P035,0,0,0,0,1
+P001,1,1,1,0,0
+P090,0,0,0,0,0
+P078,1,1,1,0,0
+P072,1,0,1,1,0
+P027,0,0,0,0,1
+P052,0,0,1,1,0
+P089,0,0,0,0,0
+P012,1,1,0,0,0
+P050,0,0,0,1,0
+P019,1,1,0,0,1
+P056,0,0,0,1,0
+P088,1,0,0,0,0
+P022,0,0,0,0,0
+P081,0,0,0,0,0
+P077,0,1,1,0,0
+P023,0,0,0,0,0
+P065,0,0,1,0,1
+P058,0,0,1,1,0
+P005,1,1,1,0,0
+P063,0,1,1,1,0
+P026,0,1,0,0,1
+P025,0,0,0,0,1
+P053,0,0,0,1,0
+P100,0,0,1,0,1
+P095,0,0,0,1,0
+P038,0,0,0,0,1
+P071,0,0,0,1,0
+P020,1,0,0,0,0
+P047,0,0,0,1,0
+P062,1,1,0,0,0
+P046,0,0,0,1,0
+P039,0,0,0,0,1
+P074,0,1,1,1,0
+P087,1,0,1,0,0
+P017,1,1,0,0,0
+P099,1,0,0,1,0
+P030,0,0,0,0,1
+P014,1,1,1,0,0
+P037,0,0,0,0,1
+P008,1,1,0,0,0
+P043,0,0,0,1,0
+P031,0,0,0,0,1
+P067,0,1,1,1,0
+P016,1,0,0,0,0
+P010,1,1,1,0,0
+P040,0,0,1,0,1
+P002,1,0,1,0,1
+P096,0,0,0,0,0
+P013,0,1,0,0,0
+P032,0,0,0,0,1
+P093,1,0,1,0,0
+P006,1,1,1,0,0
+P009,1,1,1,0,1
+P029,0,0,0,0,1
+P045,0,0,0,1,1
+P086,1,0,1,0,0
+P070,0,0,1,0,0
+P003,1,1,1,0,0
+P061,0,0,1,0,1
+P092,0,0,0,0,1
+P033,1,0,0,0,1
+P054,0,0,0,1,1
+P036,0,0,0,0,1
+P084,1,0,0,0,1
+P044,0,0,0,1,0
+P091,0,0,0,1,1
+P059,1,0,0,1,0
+P028,0,0,0,0,1
+P042,0,0,1,1,0
+P049,0,0,0,0,0
+P034,1,0,0,0,1
+P007,1,1,0,0,0
+P024,0,0,0,0,1
+P060,0,0,1,1,0
+P018,1,0,0,0,1
+P055,0,0,0,0,0
+P083,0,0,0,1,1
+P011,1,1,1,0,0
+P098,0,0,0,0,0
+P085,0,0,1,0,0
+P073,0,1,1,0,0
+P076,1,0,1,0,0
+P051,0,0,1,1,0
+P004,1,1,0,0,1
+P069,0,1,1,0,0
+P080,1,0,1,0,0`;
+
+// --- core (misma lógica que ART1Network en CarGross.py) ---
+// Solo guardo las categorías ya usadas. Las libres siempre valen t=1 y b=1/(1+N).
+function nuevaRed(N, rho, M = 50) {
+  if (!(rho >= 0 && rho <= 1)) throw new Error('rho tiene que estar entre 0 y 1');
+  return { N, rho, M, t: [], b: [] };
+}
+function norma(v) { let s = 0; for (const a of v) s += a; return s; }
+
+// presenta un patrón; con aprender=false no toca la red
+function presentar(red, x, aprender = true) {
+  const N = red.N, nx = norma(x);
+  // como en Python: patrón vacío -> categoría 0, ratio 1, sin cambios
+  if (nx === 0) return { vacio: true, j: 0, ratio: 1, nueva: false, intentos: [], orden: [], x };
+  const orden = [];
+  for (let j = 0; j < red.t.length; j++) {
+    let s = 0;
+    for (let i = 0; i < N; i++) s += red.b[j][i] * x[i];
+    orden.push({ j, score: s, nueva: false });
+  }
+  if (red.t.length < red.M) {
+    const b0 = 1 / (1 + N);
+    let s = 0;
+    for (let i = 0; i < N; i++) s += b0 * x[i];
+    orden.push({ j: red.t.length, score: s, nueva: true });
+  }
+  // mayor puntaje primero, empate -> menor índice (como scores.index(max))
+  orden.sort((a, c) => c.score > a.score ? 1 : c.score < a.score ? -1 : a.j - c.j);
+
+  const intentos = [];
+  for (const c of orden) {
+    const w = c.nueva ? new Array(N).fill(1) : red.t[c.j];
+    const T = w.map((wi, i) => wi * x[i]);
+    const ratio = norma(T) / nx;
+    const pasa = ratio >= red.rho;
+    intentos.push({ j: c.j, nueva: c.nueva, score: c.score, w: w.slice(), T, nT: norma(T), ratio, pasa });
+    if (pasa) {
+      const tViejo = w.slice();
+      if (aprender) {
+        const den = 0.5 + norma(T);
+        const b = T.map(v => v / den);
+        if (c.nueva) { red.t.push(T.slice()); red.b.push(b); }
+        else { red.t[c.j] = T.slice(); red.b[c.j] = b; }
+      }
+      return { vacio: false, j: c.j, ratio, nueva: c.nueva, intentos, orden, x, tViejo, tNuevo: T.slice() };
+    }
+  }
+  throw new Error('Capacidad de la red alcanzada');
+}
+
+function entrenar(patrones, rho, M = 50) {
+  const red = nuevaRed(patrones[0].x.length, rho, M);
+  const asign = [], ratios = [];
+  for (const p of patrones) {
+    const r = presentar(red, p.x);
+    asign.push(r.j); ratios.push(r.ratio);
+  }
+  return { red, asign, ratios };
+}
+// --- fin core ---
+
+// El CSV se lee como load_dataset: col 0 = ID (Paciente), el resto síntomas 0/1
+function leerCSV(txt) {
+  const filas = txt.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#')).map(l => l.split(',').map(c => c.trim()));
+  const cab = filas[0];
+  const sint = cab.slice(1);
+  const patrones = [];
+  for (const f of filas.slice(1)) {
+    if (f.length < cab.length) continue;
+    const x = f.slice(1).map(Number);
+    if (x.some(v => v !== 0 && v !== 1)) throw new Error('valor no binario en ' + f[0]);
+    patrones.push({ id: f[0], x });
+  }
+  return { sint, patrones };
+}
+const { sint: SINT, patrones: PAT } = leerCSV(CSV);
+const N = SINT.length;
+
+const $ = id => document.getElementById(id);
+const f2 = n => n.toFixed(2);
+const f3 = n => n.toFixed(3);
+const nombresDe = x => SINT.filter((_, i) => x[i] === 1).join(', ') || 'ninguno';
+const celdas = (v, cls = {}) => v.map((b, i) => `<span class="cel ${b ? 'on' : ''} ${cls[i] || ''}" title="${SINT[i]}"></span>`).join('');
+const matriz = v => '[' + v.join(', ') + ']';
+
+/* ---------- 1. paso a paso ---------- */
+const reducido = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const color = j => `hsl(${j * 47 % 360},62%,48%)`;
+const st = { rho: 0.65, red: null, i: -1, s: 0, tr: null, pasos: [], asign: [], timer: null, fin: false, K: 1, totalCats: 0 };
+
+// K escala todas las animaciones: 1 = normal, menos = más rápido
+function velocidad() {
+  const v = parseInt($('vel').value);
+  st.K = Math.pow(0.8, v - 5);
+  document.documentElement.style.setProperty('--K', st.K.toFixed(3));
+  $('velTxt').textContent = v;
+}
+
+// pasos de un patrón: elige, compara, vigila y resultado por cada intento, y al final aprende
+function armarPasos(tr) {
+  if (tr.vacio) return [{ tipo: 'vacio' }];
+  const p = [];
+  tr.intentos.forEach((it, k) => {
+    p.push({ tipo: 'elige', k }, { tipo: 'compara', k }, { tipo: 'vigila', k });
+    p.push({ tipo: it.pasa ? (it.nueva ? 'nueva' : 'resonancia') : 'reset', k });
+  });
+  p.push({ tipo: 'aprende', k: tr.intentos.length - 1 });
+  return p;
+}
+
+// reconstruye la red hasta el patrón i y deja el paso s; así se puede ir para atrás
+function irA(i, s) {
+  st.red = nuevaRed(N, st.rho);
+  st.asign = []; st.tr = null; st.pasos = []; st.fin = false; st.s = 0;
+  const hasta = Math.min(Math.max(i, 0), PAT.length);
+  for (let q = 0; q < hasta; q++) {
+    const r = presentar(st.red, PAT[q].x, true);
+    st.asign.push({ id: PAT[q].id, j: r.j });
+  }
+  st.i = Math.min(i, PAT.length);
+  if (st.i >= PAT.length) st.fin = true;
+  else if (st.i >= 0) {
+    st.tr = presentar(st.red, PAT[st.i].x, false);
+    st.pasos = armarPasos(st.tr);
+    st.s = Math.max(0, Math.min(s, st.pasos.length - 1));
+    const t = st.pasos[st.s].tipo;
+    if (t === 'aprende' || t === 'vacio') {
+      presentar(st.red, PAT[st.i].x, true);
+      st.asign.push({ id: PAT[st.i].id, j: st.tr.j });
+    }
+  }
+  if (st.fin) detener();
+  dibujar();
+}
+
+function reiniciar() {
+  detener();
+  st.rho = parseFloat($('rho').value);
+  $('rhoTxt').textContent = f2(st.rho);
+  st.totalCats = entrenar(PAT, st.rho).red.t.length;
+  irA(-1, 0);
+}
+
+function siguiente() {
+  if (st.fin) return false;
+  if (st.i < 0) irA(0, 0);
+  else if (st.s < st.pasos.length - 1) irA(st.i, st.s + 1);
+  else irA(st.i + 1, 0);
+  return !st.fin;
+}
+function anterior() {
+  if (st.i < 0) return;
+  if (st.fin) irA(PAT.length - 1, 1e9);
+  else if (st.s > 0) irA(st.i, st.s - 1);
+  else if (st.i > 0) irA(st.i - 1, 1e9);
+  else irA(-1, 0);
+}
+function siguientePatron() {
+  if (st.fin) return;
+  const alFinal = st.i >= 0 && st.s === st.pasos.length - 1;
+  irA(alFinal || st.i < 0 ? st.i + 1 : st.i, 1e9);
+}
+
+function detener() {
+  if (st.timer) clearInterval(st.timer);
+  st.timer = null;
+  $('bAuto').textContent = 'Auto-play';
+  $('bAuto').setAttribute('aria-pressed', 'false');
+}
+const ms = () => Math.round(3200 * st.K + 400);
+function arrancar() {
+  if (st.fin) return;
+  if (st.timer) clearInterval(st.timer);
+  st.timer = setInterval(() => { if (!siguiente()) detener(); }, ms());
+  $('bAuto').textContent = 'Pausar';
+  $('bAuto').setAttribute('aria-pressed', 'true');
+}
+const alternarAuto = () => (st.timer ? detener() : arrancar());
+
+const FASE = { elige: 0, compara: 1, vigila: 2, reset: 3, resonancia: 3, nueva: 3, aprende: 4 };
+
+function dibujar() {
+  const paso = st.tr && !st.fin ? st.pasos[st.s] : null;
+  progreso();
+  stepper(paso);
+  dibujarRed(paso);
+  narrar(paso);
+  medidor(paso);
+}
+
+function progreso() {
+  const hechos = st.asign.length;
+  const n = st.fin ? PAT.length : st.i + 1;
+  $('pN').textContent = Math.max(n, 0);
+  $('pTot').textContent = PAT.length;
+  $('pBarra').style.width = (st.fin ? 100 : Math.max(n - 1, 0) / PAT.length * 100 + (st.tr ? (st.s + 1) / st.pasos.length / PAT.length * 100 : 0)) + '%';
+  $('pCats').textContent = st.red.t.length;
+  $('pFin').textContent = `(al final con ρ = ${f2(st.rho)}: ${st.totalCats})`;
+  let m = '';
+  for (let q = 0; q < PAT.length; q++) {
+    const a = st.asign[q];
+    const cur = !st.fin && q === st.i;
+    m += `<i class="${a ? 'hay' : ''}${cur ? ' cur' : ''}" style="${a ? 'background:' + color(a.j) : ''}" title="${PAT[q].id}${a ? ' en C' + a.j : ''}"></i>`;
+  }
+  $('mapa').innerHTML = m;
+}
+
+function stepper(paso) {
+  const a = paso && paso.tipo in FASE ? FASE[paso.tipo] : -1;
+  for (let f = 0; f < 5; f++) {
+    const li = $('f' + f);
+    li.className = f < a ? 'hecha' : f === a ? 'activa' : '';
+    li.removeAttribute('aria-current');
+    li.removeAttribute('data-res');
+  }
+  if (a >= 0) $('f' + a).setAttribute('aria-current', 'step');
+  let t = 'Resonancia / Reset';
+  if (paso && paso.tipo === 'reset') { t = 'Reset'; $('f3').dataset.res = 'no'; }
+  else if (paso && ['resonancia', 'nueva'].includes(paso.tipo)) { t = 'Resonancia'; $('f3').dataset.res = 'ok'; }
+  else if (a === 4) t = 'Resonancia';
+  $('f3t').textContent = t;
+  $('intento').textContent = paso && paso.k !== undefined && !st.fin
+    ? `Intento ${paso.k + 1} de ${st.tr.intentos.length} para ${PAT[st.i].id}` : '';
+}
+
+function dibujarRed(paso) {
+  const red = st.red, tr = st.tr;
+  const tipo = paso ? paso.tipo : null, k = paso ? paso.k : undefined;
+  const it = k !== undefined ? tr.intentos[k] : null;
+  const filas = red.t.length + (red.t.length < red.M ? 1 : 0);
+  const H = filas > 12 ? 30 : 38, top = 46, x0 = 150, rowX = 400, ySep = 54;
+  const cel0 = rowX + 84, cntX = cel0 + N * 22 + 6, scX = cntX + 62, rowW = scX + 56 - rowX;
+  const W = rowX + rowW + 8;
+  const midY = Math.max(top + filas * H / 2, top + (N - 1) * ySep / 2 + 26);
+  const cy1 = i => midY - (N - 1) * ySep / 2 + i * ySep;
+  const cyF = j => top + j * H + H / 2;
+  const alto = Math.max(top + filas * H + 12, cy1(N - 1) + 36, 330);
+  const nodoX = rowX + 16, fx = x0 + 17, ex = nodoX - 10;
+  const x = tr ? tr.x : new Array(N).fill(0);
+  const quieto = ['vigila', 'reset', 'resonancia', 'nueva', 'aprende'].includes(tipo);
+  const anim = !reducido;
+
+  const muertas = new Set();
+  if (tr && k !== undefined) for (let q = 0; q < k; q++) muertas.add(tr.intentos[q].j);
+  const sc = {};
+  if (tr && !tr.vacio) tr.orden.forEach(o => { sc[o.j] = o.score; });
+  const vivas = tr && !tr.vacio ? tr.orden.filter(o => !muertas.has(o.j)) : [];
+  const candSet = new Set(vivas.map(o => o.j));
+
+  const lin = (x1, y1, x2, y2, c, o, dl, w) => `<line class="lin ${c}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" style="--o:${o};--dl:${dl}s;stroke-width:${w}"/>`;
+  const pul = (x1, y1, x2, y2, c, dl, r) => anim ? `<circle class="pulso ${c}" cx="${x1}" cy="${y1}" r="${r}" style="--dx:${x2 - x1}px;--dy:${y2 - y1}px;--dl:${dl}s"/>` : '';
+  const onda = (cx, cy, r, dl) => anim ? `<circle class="onda" cx="${cx}" cy="${cy}" r="${r}" style="--dl:${dl}s"/>` : '';
+  let L = '', P = '';
+
+  // bottom-up: de cada síntoma prendido a cada categoría que sigue en carrera
+  if (tipo === 'elige' && !tr.vacio) {
+    const mx = Math.max(...vivas.map(o => o.score)) || 1;
+    vivas.forEach((o, r) => {
+      const rel = o.score / mx;
+      for (let i = 0; i < N; i++) if (x[i]) {
+        const y1 = cy1(i), y2 = cyF(o.j), dl = 0.2 + r * 0.05 + i * 0.04;
+        L += lin(fx, y1, ex, y2, 'sube', (0.2 + 0.7 * rel).toFixed(2), dl, (1 + 2.5 * rel).toFixed(1));
+        P += pul(fx, y1, ex, y2, 'sube', dl + 0.1, (2.5 + 3 * rel).toFixed(1));
+      }
+    });
+  }
+  // top-down: la plantilla de la ganadora vuelve a F1
+  const hayPlantilla = it && ['compara', 'vigila', 'reset', 'resonancia', 'nueva', 'aprende'].includes(tipo);
+  if (hayPlantilla) {
+    const y2 = cyF(it.j);
+    for (let i = 0; i < N; i++) if (it.w[i]) {
+      const y1 = cy1(i), dl = 0.15 + i * 0.08;
+      L += lin(fx, y1, ex, y2, 'baja', quieto ? 0.55 : 0.85, quieto ? 0 : dl, 2.5);
+      if (tipo === 'compara') P += pul(ex, y2, fx, y1, 'baja', dl + 0.1, 5);
+    }
+  }
+  // reset: la señal pasa a la siguiente candidata
+  if (tipo === 'reset') {
+    const sig = tr.intentos[k + 1];
+    if (sig) {
+      const y1 = cyF(it.j), y2 = cyF(sig.j), bx = rowX - 16;
+      L += `<path class="lin salta" d="M ${rowX} ${y1} L ${bx} ${y1} L ${bx} ${y2} L ${rowX} ${y2}" style="--o:1;--dl:0.9s;stroke-width:3"/>`;
+      P += pul(bx, y1, bx, y2, 'salta', 1.0, 6);
+    }
+  }
+  if (tipo === 'resonancia' || tipo === 'nueva') {
+    P += onda(nodoX, cyF(it.j), 14, 0.1);
+    for (let i = 0; i < N; i++) if (x[i] && it.w[i]) P += onda(x0, cy1(i), 17, 0.2);
+  }
+
+  // cabecera
+  let s = `<text class="fino" x="${x0}" y="24" text-anchor="middle">Capa F1 (entrada)</text><text class="fino" x="${rowX}" y="24">Capa F2 (categorías)</text>` +
+    `<text class="fino" x="${cel0}" y="40">plantilla w</text><text class="fino" x="${cntX}" y="40">pac.</text><text class="fino" x="${scX}" y="40">puntaje</text>`;
+  s += L;
+
+  // filas de F2
+  const cnt = {};
+  st.asign.forEach(a => { cnt[a.j] = (cnt[a.j] || 0) + 1; });
+  const estado = j => {
+    if (!paso || tipo === 'vacio') return '';
+    if (muertas.has(j)) return 'off';
+    const g = it.j;
+    if (tipo === 'elige') return j === g ? 'elegida' : candSet.has(j) ? 'pierde' : '';
+    if (tipo === 'compara' || tipo === 'vigila') return j === g ? 'comp' : 'resto';
+    if (tipo === 'reset') return j === g ? 'offNow' : 'resto';
+    if (tipo === 'resonancia' || tipo === 'nueva') return j === g ? 'winNow' : 'resto';
+    if (tipo === 'aprende') return j === tr.j ? 'win' + (tr.nueva ? ' nace' : '') : 'resto';
+    return '';
+  };
+  for (let j = 0; j < filas; j++) {
+    const libre = j >= red.t.length;
+    const w = libre ? new Array(N).fill(1) : red.t[j];
+    const y = top + j * H;
+    const cls = estado(j);
+    const gana = cls.startsWith('win');
+    let cel = '';
+    for (let i = 0; i < N; i++) {
+      let c = 'sc';
+      let dl = '';
+      if (libre) c += ' vac';
+      else if (w[i]) c += ' on';
+      if (tipo === 'aprende' && j === tr.j) {
+        if (!tr.nueva && tr.tViejo[i] === 1 && w[i] === 0) { c += ' perdi'; dl = `style="--dl:${(0.6 + i * 0.12).toFixed(2)}s"`; }
+        if (tr.nueva && w[i]) { c += ' nacen'; dl = `style="--dl:${(0.7 + i * 0.12).toFixed(2)}s"`; }
+      }
+      cel += `<rect class="${c}" ${dl} x="${cel0 + i * 22}" y="${y + H / 2 - 9}" width="18" height="18" rx="4"><title>${SINT[i]}</title></rect>`;
+    }
+    const nodoSt = libre ? 'stroke:var(--mut)' : `stroke:${color(j)}${gana ? ';fill:' + color(j) : ''}`;
+    s += `<g class="fila-f2 ${libre ? 'libre ' : ''}${cls}"><rect class="fondo" x="${rowX}" y="${y + 2}" width="${rowW}" height="${H - 4}" rx="8"/>` +
+      `<circle class="nodo" cx="${nodoX}" cy="${y + H / 2}" r="9" style="${nodoSt}"/>` +
+      `<text x="${rowX + 32}" y="${y + H / 2 + 5}">${libre ? 'libre' : 'C' + j}</text>${cel}` +
+      `<text class="fino num" x="${cntX}" y="${y + H / 2 + 5}">${libre ? '' : (cnt[j] || 0)}</text>` +
+      `<text class="fino num" x="${scX}" y="${y + H / 2 + 5}">${sc[j] !== undefined ? f3(sc[j]) : ''}</text></g>`;
+  }
+
+  // nodos de F1
+  s += '<g class="f1">';
+  for (let i = 0; i < N; i++) {
+    let c = x[i] ? 'on' : '', dl = 0;
+    if (hayPlantilla && x[i]) {
+      c += it.w[i] ? ' match' : ' miss';
+      dl = tipo === 'compara' ? 1.3 + i * 0.1 : 0;
+    }
+    if (tipo === 'elige' && k === 0 && x[i] && anim) c += ' entra';
+    s += `<circle class="${c}" cx="${x0}" cy="${cy1(i)}" r="17" style="--dl:${dl}s"/>` +
+      `<text x="${x0 - 26}" y="${cy1(i) + 5}" text-anchor="end">${SINT[i]}</text>` +
+      `<text class="v ${x[i] ? 'on' : ''}" x="${x0}" y="${cy1(i) + 5}" text-anchor="middle">${x[i]}</text>`;
+  }
+  s += '</g>' + P;
+
+  const svg = $('red');
+  svg.setAttribute('viewBox', `0 0 ${W} ${alto}`);
+  svg.classList.toggle('quieto', quieto);
+  svg.innerHTML = s;
+}
+
+const nombre = it => it.nueva ? `la categoría libre (C${it.j})` : `C${it.j}`;
+
+function narrar(paso) {
+  const tr = st.tr, red = st.red;
+  let tit = '', h = '', calc = '';
+  if (st.fin) {
+    tit = `Terminó: ${red.t.length} categorías`;
+    h = `<p>Con ρ = ${f2(st.rho)} los ${PAT.length} pacientes quedaron repartidos en ${red.t.length} categorías.</p><p>Movés ρ o reiniciás para ver otra corrida.</p>`;
+  } else if (!paso) {
+    tit = 'Listo para empezar';
+    h = `<p>La red todavía no tiene categorías. Apretá <b>Espacio</b> o <b>Siguiente paso</b> para presentar al primer paciente (${PAT[0].id}).</p><p>Con ρ = ${f2(st.rho)} la corrida completa termina con ${st.totalCats} categorías.</p>`;
+  } else {
+    const p = PAT[st.i], nx = norma(p.x);
+    const it = paso.k !== undefined ? tr.intentos[paso.k] : null;
+    const muertas = tr.intentos.slice(0, paso.k || 0).map(a => a.j);
+    switch (paso.tipo) {
+      case 'vacio':
+        tit = `${p.id} no tiene síntomas`;
+        h = '<p>El código lo manda a la categoría 0 con similitud 1 y no cambia nada en la red.</p>';
+        break;
+      case 'elige': {
+        const vivas = tr.orden.filter(o => !muertas.includes(o.j));
+        const g = vivas[0];
+        const rank = vivas.map(o => `${o.nueva ? 'libre' : 'C' + o.j} (${f3(o.score)})`).join(' &gt; ');
+        if (paso.k === 0) {
+          tit = `Entra ${p.id}`;
+          h = `<p>Síntomas: <b>${nombresDe(p.x)}</b>. x = <span class="mono">${matriz(p.x)}</span>.</p>` +
+            `<p>Cada categoría recibe una señal desde F1 y saca un puntaje según cuánto se parece al paciente. ` +
+            (red.t.length ? `Gana la de mayor puntaje: <b>${nombre(g)}</b>.` : 'Todavía no hay ninguna, así que compite sola la categoría libre.') + '</p>';
+        } else {
+          tit = `Vuelve a competir: ${nombre(g)}`;
+          h = `<p>La señal sigue con las categorías que no fallaron. La de mayor puntaje ahora es <b>${nombre(g)}</b>.</p>`;
+        }
+        h += `<p class="mut">Orden por puntaje: ${rank}</p>`;
+        break;
+      }
+      case 'compara': {
+        const coin = SINT.filter((_, i) => it.T[i] === 1);
+        tit = `${it.nueva ? 'La libre' : 'C' + it.j} devuelve su plantilla`;
+        h = `<p>La categoría manda hacia F1 los síntomas que recuerda (violeta). Los que también tiene el paciente se prenden en verde: <b>${coin.join(', ') || 'ninguno'}</b>.</p>`;
+        if (it.nueva) h += '<p>La libre tiene todo en 1, así que coincide con todos los síntomas del paciente.</p>';
+        calc = tablaTest(p.x, it, 1.4);
+        break;
+      }
+      case 'vigila':
+        tit = '¿Alcanza la similitud?';
+        h = `<p>Coinciden <b>${it.nT} de ${nx}</b> síntomas del paciente: ${it.nT} / ${nx} = <b>${f2(it.ratio)}</b>. Hace falta ρ = <b>${f2(st.rho)}</b> o más.</p>` +
+          `<p class="tarde"><b>${it.pasa ? `Pasa: ${f2(it.ratio)} &ge; ${f2(st.rho)}.` : `No alcanza: ${f2(it.ratio)} &lt; ${f2(st.rho)}.`}</b></p>`;
+        calc = tablaTest(p.x, it, 0);
+        break;
+      case 'reset': {
+        const sig = tr.intentos[paso.k + 1];
+        tit = `Reset: C${it.j} queda afuera`;
+        h = `<p><span class="tag reset">reset</span> Con ${f2(it.ratio)} no llega a ρ = ${f2(st.rho)}. Se apaga solo para este paciente y la señal pasa a <b>${sig ? nombre(sig) : 'la siguiente'}</b>.</p>`;
+        calc = tablaTest(p.x, it, 0);
+        break;
+      }
+      case 'resonancia':
+        tit = `Resonancia con C${it.j}`;
+        h = `<p><span class="tag res">resonancia</span> Con ${f2(it.ratio)} pasa la vigilancia. <b>${p.id}</b> entra a <b>C${it.j}</b> y la red se estabiliza.</p><p class="mut">Falta el aprendizaje: ajustar la plantilla.</p>`;
+        calc = tablaTest(p.x, it, 0);
+        break;
+      case 'nueva':
+        tit = 'Pasa la categoría libre';
+        h = `<p><span class="tag nueva">categoría nueva</span> ${paso.k > 0 ? 'Las categorías anteriores fallaron la vigilancia y la libre siempre pasa.' : 'La categoría libre tiene el mejor puntaje y siempre pasa.'}</p><p class="mut">Falta el aprendizaje: nace la categoría.</p>`;
+        break;
+      case 'aprende':
+        if (tr.nueva) {
+          tit = `Nace la categoría C${tr.j}`;
+          h = `<p>Su plantilla es igual al paciente: <span class="mono">${matriz(tr.tNuevo)}</span>.</p>` +
+            (red.t.length < red.M ? '<p class="mut">Queda otra categoría libre disponible abajo.</p>' : '');
+        } else {
+          const perd = SINT.filter((_, i) => tr.tViejo[i] === 1 && tr.tNuevo[i] === 0);
+          tit = `Aprendizaje: se ajusta la plantilla de C${tr.j}`;
+          h = '<p>La plantilla pasa a w AND x. ' + (perd.length
+            ? `Pierden el 1: <b>${perd.join(', ')}</b> (rojo). Una plantilla solo puede perder síntomas, nunca ganar.`
+            : 'No cambia ningún bit: el paciente ya estaba contenido en la plantilla.') + '</p>';
+          calc = tablaCambio(tr);
+        }
+        break;
+    }
+  }
+  $('nTit').innerHTML = tit;
+  $('nTxt').innerHTML = h;
+  $('calc').innerHTML = calc;
+  $('calcCard').hidden = !calc;
+}
+
+// dl = demora (s) con que se iluminan las coincidencias
+function tablaTest(x, it, dl) {
+  const fila = (n, v, hit) => `<tr><th scope="row">${n}</th>${v.map((b, i) => `<td class="num${hit && b ? ' hit' : ''}" style="--dl:${(dl + i * 0.12).toFixed(2)}s">${b}</td>`).join('')}</tr>`;
+  return `<table><tr><th></th>${SINT.map(s => `<th class="num">${s}</th>`).join('')}</tr>${fila('x', x)}${fila('w', it.w)}${fila('x AND w', it.T, true)}</table>`;
+}
+function tablaCambio(tr) {
+  const fila = (n, v, ref) => `<tr><th scope="row">${n}</th>${v.map((b, i) => `<td class="num${ref && ref[i] === 1 && b === 0 ? ' lost' : ''}">${b}</td>`).join('')}</tr>`;
+  return `<table><tr><th></th>${SINT.map(s => `<th class="num">${s}</th>`).join('')}</tr>${fila('w antes', tr.tViejo)}${fila('w ahora', tr.tNuevo, tr.tViejo)}</table>`;
+}
+
+function medidor(paso) {
+  const tr = st.tr;
+  const rho = st.rho;
+  const it = paso && paso.k !== undefined && ['vigila', 'reset', 'resonancia', 'nueva', 'aprende'].includes(paso.tipo) ? tr.intentos[paso.k] : null;
+  const pos = rho < 0.08 ? ' izq' : rho > 0.92 ? ' der' : '';
+  let txt = '<span class="mut">Todavía no se calculó la similitud de este intento.</span>';
+  if (it) {
+    txt = `|x AND w| / |x| = ${it.nT} / ${norma(tr.x)} = <b>${f2(it.ratio)}</b> ` +
+      (it.pasa ? `&ge; ρ ${f2(rho)} <span class="tag res">pasa</span>` : `&lt; ρ ${f2(rho)} <span class="tag reset">no pasa</span>`);
+  }
+  $('gauge').innerHTML = `<h3 style="margin:0">Vigilancia</h3><div class="gtrack"><div class="gfill ${it ? (it.pasa ? 'ok' : 'no') : ''}${it && paso.tipo === 'vigila' ? ' anima' : ''}" style="--r:${it ? it.ratio * 100 : 0}%"></div>` +
+    `<div class="grho${pos}" style="left:${rho * 100}%"><span>ρ = ${f2(rho)}</span></div></div><div class="gtxt">${txt}</div>`;
+}
+
+/* ---------- listado de categorías (comparación y juego) ---------- */
+function listaCats(red, items, destacar, nace = -1) {
+  let h = '';
+  for (let j = 0; j < red.t.length; j++) {
+    const mios = items.filter(a => a.j === j);
+    const ids = mios.map(a => `<span class="chip">${a.id}</span>`).join('');
+    h += `<div class="cat ${destacar === j ? 'dest' : ''} ${nace === j ? 'nace' : ''}" style="--c:${color(j)}"><b>C${j}</b>${celdas(red.t[j])} <span class="mut">${nombresDe(red.t[j])}, ${mios.length} pac.</span><div class="chips" style="margin-top:4px">${ids}</div></div>`;
+  }
+  return h || '<p class="mut">sin categorías</p>';
+}
+
+/* ---------- 2. comparativa ---------- */
+const cmp = { cards: [], timer: null };
+
+function detenerCmp() { if (cmp.timer) clearInterval(cmp.timer); cmp.timer = null; }
+
+function pintarCmp(c, red, items, nace) {
+  const tira = PAT.map((p, q) => items[q] ? `<i class="hay" style="background:${color(items[q].j)}" title="${p.id}"></i>` : '<i></i>').join('');
+  const fin = items.length === PAT.length;
+  const med = fin ? ` Similitud media ${(c.r.ratios.reduce((a, b) => a + b, 0) / c.r.ratios.length).toFixed(4)}.` : '';
+  c.caja.innerHTML = `<div class="cmp-h"><h3>ρ = ${f2(c.rho)}</h3><span class="big">${red.t.length}</span><span class="mut">categorías, ${items.length} de ${PAT.length} pacientes.${med}</span></div>` +
+    `<div class="tira">${tira}</div>` + listaCats(red, items, -1, nace);
+}
+
+function mostrarFinalCmp() {
+  detenerCmp();
+  cmp.cards.forEach(c => pintarCmp(c, c.r.red, PAT.map((p, q) => ({ id: p.id, j: c.r.asign[q] })), -1));
+}
+
+function comparar() {
+  detenerCmp();
+  const out = $('compRes');
+  out.innerHTML = '';
+  cmp.cards = [];
+  document.querySelectorAll('.rc').forEach(inp => {
+    const rho = parseFloat(inp.value);
+    const caja = document.createElement('div');
+    caja.className = 'card';
+    out.appendChild(caja);
+    if (!(rho >= 0 && rho <= 1)) { caja.innerHTML = '<p>ρ tiene que estar entre 0 y 1.</p>'; return; }
+    cmp.cards.push({ caja, rho, r: entrenar(PAT, rho) });
+  });
+  mostrarFinalCmp();
+}
+
+function animarCmp() {
+  detenerCmp();
+  cmp.cards.forEach(c => { c.red = nuevaRed(N, c.rho); c.items = []; pintarCmp(c, c.red, c.items, -1); });
+  let n = 0;
+  cmp.timer = setInterval(() => {
+    if (n >= PAT.length) { mostrarFinalCmp(); return; }
+    cmp.cards.forEach(c => {
+      const r = presentar(c.red, PAT[n].x);
+      c.items.push({ id: PAT[n].id, j: r.j });
+      pintarCmp(c, c.red, c.items, r.nueva ? r.j : -1);
+    });
+    n++;
+  }, Math.round(500 * st.K) + 40);
+}
+
+/* ---------- 3. jugá ---------- */
+const jg = { red: null, items: null, x: new Array(N).fill(0), aprendidos: 0 };
+
+function entrenarJ() {
+  const rho = parseFloat($('rhoJ').value);
+  $('rhoJTxt').textContent = f2(rho);
+  const r = entrenar(PAT, rho);
+  jg.red = r.red; jg.items = PAT.map((p, q) => ({ id: p.id, j: r.asign[q] })); jg.aprendidos = 0;
+  mostrarJ();
+}
+
+function mostrarJ() {
+  $('csvJ').textContent = 'PX,' + jg.x.join(',');
+  $('infoJ').textContent = `La red tiene ${jg.red.t.length} categorías${jg.aprendidos ? ` (${jg.aprendidos} patrón(es) aprendidos aparte del entrenamiento)` : ''}.`;
+  const tr = presentar(jg.red, jg.x, false);
+  let h = '';
+  if (tr.vacio) {
+    h = '<p class="veredicto">Sin síntomas: ART1 lo manda a la categoría 0 y no modifica nada.</p>';
+  } else {
+    const w = tr.intentos[tr.intentos.length - 1];
+    h = `<p class="veredicto">${w.nueva ? `Ninguna categoría existente pasa la vigilancia: se crearía la <b>C${w.j}</b> nueva.` : `Entra a la <b>C${w.j}</b> (similitud ${f2(w.ratio)} &ge; ρ ${f2(jg.red.rho)}).`}</p>`;
+    h += `<p class="mut">La red prueba las categorías en orden de puntaje y se queda con la primera que supera ρ. Síntomas del paciente: ${nombresDe(jg.x)}.</p>`;
+    h += '<table><tr><th>Orden</th><th>Categoría</th><th class="num">Puntaje</th><th class="num">|x AND w|</th><th class="num">Similitud</th><th>Resultado</th></tr>';
+    tr.intentos.forEach((it, k) => {
+      h += `<tr><td>${k + 1}</td><td>${it.nueva ? 'libre (C' + it.j + ')' : 'C' + it.j}</td><td class="num">${f3(it.score)}</td><td class="num">${it.nT} de ${norma(jg.x)}</td><td class="num">${f2(it.ratio)} ${it.pasa ? '&ge;' : '&lt;'} ${f2(jg.red.rho)}</td><td>${it.pasa ? '<span class="tag res">pasa</span>' : '<span class="tag reset">reset</span>'}</td></tr>`;
+    });
+    h += '</table>';
+  }
+  const res = $('resJ');
+  res.innerHTML = h;
+  res.classList.remove('flash'); void res.offsetWidth; res.classList.add('flash');
+  $('catsJ').innerHTML = listaCats(jg.red, jg.items, tr.vacio || tr.nueva ? -1 : tr.j);
+  document.querySelectorAll('#bitsJ button').forEach((b, i) => b.setAttribute('aria-pressed', jg.x[i] === 1));
+}
+
+function armarBits() {
+  $('bitsJ').innerHTML = SINT.map((s, i) => `<button type="button" aria-pressed="false" data-i="${i}">${s}: <span class="mono">0</span></button>`).join('');
+  $('bitsJ').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const i = +b.dataset.i;
+    jg.x[i] = 1 - jg.x[i];
+    b.querySelector('span').textContent = jg.x[i];
+    mostrarJ();
+  });
+}
+
+/* ---------- modo exposición y atajos ---------- */
+const enExpo = () => document.documentElement.classList.contains('expo');
+function expo(on) {
+  document.documentElement.classList.toggle('expo', on);
+  $('bExpo').textContent = on ? 'Salir de exposición' : 'Modo exposición';
+  try {
+    if (on && !document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+    if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  } catch (e) { /* sin pantalla completa, queda el modo igual */ }
+  scrollTo(0, 0);
+}
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && enExpo()) expo(false); });
+
+function cambiarVel(d) {
+  const v = $('vel');
+  v.value = Math.max(1, Math.min(10, +v.value + d));
+  velocidad();
+  if (st.timer) arrancar();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target;
+  if (t.closest && t.closest('#jugar, #comp')) return;
+  const rango = t.matches && t.matches('input[type=range]');
+  const k = e.key;
+  const hacer = f => {
+    e.preventDefault();
+    if (document.activeElement && document.activeElement.tagName === 'BUTTON') document.activeElement.blur();
+    f();
+  };
+  if (k === ' ') hacer(() => { detener(); siguiente(); });
+  else if (k === 'ArrowRight' && !rango) hacer(() => { detener(); siguiente(); });
+  else if (k === 'ArrowLeft' && !rango) hacer(() => { detener(); anterior(); });
+  else if (k === 'ArrowDown' && !rango) hacer(() => { detener(); siguientePatron(); });
+  else if (k === 'p' || k === 'P') hacer(alternarAuto);
+  else if (k === 'r' || k === 'R') hacer(reiniciar);
+  else if (k === '+' || k === '=') hacer(() => cambiarVel(1));
+  else if (k === '-' || k === '_') hacer(() => cambiarVel(-1));
+  else if (k === 'e' || k === 'E' || k === 'f' || k === 'F') hacer(() => expo(!enExpo()));
+  else if (k === 'Escape' && enExpo()) hacer(() => expo(false));
+});
+
+/* ---------- eventos ---------- */
+$('bPaso').onclick = () => { detener(); siguiente(); };
+$('bAtras').onclick = () => { detener(); anterior(); };
+$('bPat').onclick = () => { detener(); siguientePatron(); };
+$('bReset').onclick = reiniciar;
+$('bAuto').onclick = alternarAuto;
+$('bExpo').onclick = () => expo(!enExpo());
+$('bTema').onclick = () => {
+  const d = document.documentElement;
+  const actual = d.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  d.dataset.theme = actual === 'dark' ? 'light' : 'dark';
+};
+$('vel').oninput = () => { velocidad(); if (st.timer) arrancar(); };
+$('rho').oninput = reiniciar;
+['vel', 'rho'].forEach(id => $(id).addEventListener('change', e => e.target.blur()));
+document.querySelectorAll('.rc').forEach(i => i.addEventListener('input', comparar));
+$('bAnim').onclick = animarCmp;
+$('bFinal').onclick = mostrarFinalCmp;
+$('rhoJ').oninput = entrenarJ;
+$('bRe').onclick = entrenarJ;
+$('bAprende').onclick = () => {
+  const tr = presentar(jg.red, jg.x, true);
+  if (!tr.vacio) { jg.aprendidos++; jg.items.push({ id: 'tuyo' + jg.aprendidos, j: tr.j }); }
+  mostrarJ();
+};
+
+velocidad();
+armarBits();
+reiniciar();
+comparar();
+entrenarJ();
+</script>
+</body>
+</html>
