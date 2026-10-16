@@ -5,6 +5,7 @@ import os
 import csv
 import random
 import argparse
+import unicodedata
 from datetime import datetime
 from typing import List, Dict, Tuple, Optional, Any
 
@@ -148,7 +149,11 @@ class ART1Network:
 
 def infer_specialty_and_recommendations(active_symptoms: List[str]) -> Tuple[str, List[str]]:
     """Devuelve especialidad y recomendaciones según los síntomas activos."""
-    symptoms_set = set(s.lower() for s in active_symptoms)
+    # sin tildes ni mayúsculas: 'Presión alta' == 'presion alta'
+    symptoms_set = set(
+        unicodedata.normalize("NFD", s.lower()).encode("ascii", "ignore").decode()
+        for s in active_symptoms
+    )
 
     if "disnea" in symptoms_set or "tos" in symptoms_set:
         spec = "NEUMONOLOGÍA"
@@ -214,8 +219,8 @@ def _cell_to_str(value: Any) -> str:
 
 def _read_csv_rows(file_path: str) -> List[List[str]]:
     """Lee las filas de un .csv, saltando comentarios (#) y filas vacías."""
-    # utf-8-sig por el BOM de Excel; si falla se prueba cp1252
-    for encoding in ('utf-8-sig', 'cp1252'):
+    # utf-8-sig por el BOM de Excel; si falla se prueba cp1252 y después latin-1
+    for encoding in ('utf-8-sig', 'cp1252', 'latin-1'):
         try:
             with open(file_path, mode='r', encoding=encoding, newline='') as f:
                 rows = []
@@ -228,7 +233,7 @@ def _read_csv_rows(file_path: str) -> List[List[str]]:
                 return rows
         except UnicodeDecodeError:
             continue
-    raise ValueError(f"No se pudo decodificar el archivo '{file_path}'. Se probaron UTF-8 y CP1252.")
+    raise ValueError(f"No se pudo decodificar el archivo '{file_path}'. Se probaron UTF-8, CP1252 y Latin-1.")
 
 
 def _xlsx_col_index(cell_ref: str) -> int:
@@ -354,9 +359,7 @@ def load_dataset(file_path: str) -> Tuple[List[List[int]], List[str], Optional[L
     if file_path.endswith('.xlsx'):
         all_rows = _read_xlsx_rows(file_path)
     else:
-        with open(file_path, mode='r', encoding='utf-8') as f:
-            reader = csv.reader(f)
-            all_rows = [row for row in reader if row and not row[0].startswith('#')]
+        all_rows = _drop_phantom_columns(_read_csv_rows(file_path))
 
     if not all_rows:
         raise ValueError("El archivo está vacío o no contiene datos válidos.")
@@ -410,6 +413,9 @@ def load_dataset(file_path: str) -> Tuple[List[List[int]], List[str], Optional[L
 
         if label_col_idx is not None:
             validation_labels.append(cleaned_row[label_col_idx])
+
+    if not data_patterns:
+        raise ValueError("El archivo tiene encabezado pero no tiene filas de datos válidas.")
 
     return data_patterns, feature_names, (validation_labels if label_col_idx is not None else None), patient_ids
 
@@ -674,25 +680,54 @@ R: No, solo agrupa. Es un trabajo práctico de la materia Inteligencia
     print(man_text)
 
 
-def run_smoke_test():
-    """Autotest rápido (--test)."""
-    print("[TEST] Iniciando Smoke Test de la Red ART1...")
-    sample_patterns = [
-        [1, 0, 0, 0, 0, 1],
-        [1, 0, 0, 0, 0, 1],
-        [0, 1, 1, 0, 0, 0]
+def run_smoke_test() -> bool:
+    """Autotest rápido (--test). Devuelve True si pasan todos los chequeos."""
+    print("[TEST] Iniciando autotest de la Red ART1...")
+    patrones = [[1, 1, 0, 0], [1, 0, 1, 0], [0, 0, 1, 1]]
+
+    def clusters(rho):
+        red = ART1Network(num_inputs=4, max_categories=10, rho=rho)
+        red.fit(patrones)
+        return red
+
+    def vacio_va_a_0():
+        return ART1Network(4, 10, 0.65).train_pattern([0, 0, 0, 0]) == (0, 1.0)
+
+    def aprende_con_and():
+        red = ART1Network(4, 10, 0.5)
+        red.train_pattern([1, 1, 1, 0])
+        red.train_pattern([1, 1, 0, 0])
+        return red.get_cluster_templates() == {0: [1, 1, 0, 0]}
+
+    chequeos = [
+        ("rho bajo (0.3) da 2 categorías", lambda: clusters(0.3).num_committed_categories == 2),
+        ("rho alto (0.9) da 3 categorías", lambda: clusters(0.9).num_committed_categories == 3),
+        ("patrón vacío va a la categoría 0", vacio_va_a_0),
+        ("el aprendizaje achica la plantilla con AND", aprende_con_and),
+        ("presión alta (con tilde) deriva a cardiología",
+         lambda: infer_specialty_and_recommendations(["Presión alta"])[0] == "CARDIOLOGÍA"),
     ]
-    art1 = ART1Network(num_inputs=6, max_categories=10, rho=0.65)
-    res = art1.fit(sample_patterns)
-    print(f"[TEST] Éxito: {art1.num_committed_categories} clusters creados.")
+    fallos = 0
+    for nombre, chequeo in chequeos:
+        try:
+            ok = chequeo()
+        except Exception as exc:
+            ok = False
+            nombre += f" ({exc})"
+        print(f"[TEST] {'ok' if ok else 'FALLO'}: {nombre}")
+        fallos += not ok
+    if fallos:
+        print(f"[ERROR] Autotest fallido: {fallos} chequeo(s) no pasaron.", file=sys.stderr)
+        return False
     print("TEST PASSED")
+    return True
 
 
 def main():
     """Punto de entrada: los errores previsibles salen como [ERROR]."""
     try:
         _run()
-    except (FileNotFoundError, FileExistsError, ValueError, ImportError, OSError) as exc:
+    except (FileNotFoundError, FileExistsError, ValueError, ImportError, OSError, RuntimeError) as exc:
         motivo = str(exc).strip() or exc.__class__.__name__
         print(f"[ERROR] {motivo}", file=sys.stderr)
         print("Corrida interrumpida. Use --man para el manual de referencia "
@@ -727,7 +762,8 @@ def _run():
         return
 
     if args.test:
-        run_smoke_test()
+        if not run_smoke_test():
+            sys.exit(1)
         return
 
     input_path = args.pos_input or args.input
