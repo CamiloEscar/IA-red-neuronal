@@ -1,11 +1,4 @@
-"""
-CarGross.py - Implementación de la Red Neuronal ART1 (Carpenter-Grossberg)
-Cátedra Inteligencia Artificial - Trabajo Final Integrador (TFI)
-
-Este módulo implementa el algoritmo de la Red Neuronal ART1 (Adaptive Resonance Theory 1)
-para el agrupamiento no supervisado de patrones binarios, aplicado al diagnóstico médico
-y categorización de síntomas de pacientes.
-"""
+"""CarGross.py - Red neuronal ART1 (Carpenter-Grossberg) para agrupar síntomas de pacientes. TFI."""
 
 import sys
 import os
@@ -16,19 +9,7 @@ from datetime import datetime
 from typing import List, Dict, Tuple, Optional, Any
 
 
-
 class ART1Network:
-    """
-    Inicializa la red ART1.
-
-    Parámetros:
-        num_inputs: cantidad de variables de entrada del patrón binario.
-        max_categories: número máximo de categorías o clusters que la red puede crear.
-        rho: umbral de vigilancia que controla la aceptación de un patrón en un cluster.
-    """
-    # Validacion del parametro de vigilancia (rho) y del numero de entradas (num_inputs)
-    # Debe estar en el rango [0, 1], ya que se usa como umbral de comparación.
-
     def __init__(self, num_inputs: int, max_categories: int = 50, rho: float = 0.65):
         if not (0.0 <= rho <= 1.0):
             raise ValueError("El parámetro de vigilancia (rho) debe estar entre 0.0 y 1.0.")
@@ -41,118 +22,65 @@ class ART1Network:
 
         self.num_committed_categories = 0
 
-        # Paso 1: Inicialización de Pesos Synápticos
-        # Pesos Top-Down t_ji (M x N), inicializados en 1
+        # top-down t_ji (M x N), en 1
         self.t = [[1.0 for _ in range(self.N)] for _ in range(self.M)]
 
-        # Pesos Bottom-Up b_ij (N x M), inicializados en 1 / (1 + N)
+        # bottom-up b_ij (N x M), en 1 / (1 + N)
         initial_b = 1.0 / (1.0 + self.N)
         self.b = [[initial_b for _ in range(self.M)] for _ in range(self.N)]
 
         self.history_assignments: List[int] = []
         self.history_ratios: List[float] = []
-    
+
     def _compute_matching_scores(self, x: List[int], active_mask: List[bool]) -> List[float]:
-        """Calcula las puntuaciones de coincidencia (mu_j) para cada categoría j."""
-        # Lista que guarda el score final para cada categoría j.
         scores = []
         for j in range(self.M):
-            # Si la categoría está desactivada por no superar el test de vigilancia,
-            # se descarta para esta iteración.
             if not active_mask[j]:
                 scores.append(-1.0)
             else:
-                # Score de coincidencia:
-                # suma de b[i][j] * x[i] para todas las entradas i.
-                # Esto mide qué tan bien la categoría actual representa el patrón.
                 score = sum(self.b[i][j] * x[i] for i in range(self.N))
                 scores.append(score)
         return scores
 
     def train_pattern(self, x: List[int]) -> Tuple[int, float]:
-        """
-            Procesa un único patrón binario de entrada y lo asigna a una categoría ART1.
-
-            Este método implementa la lógica principal del algoritmo:
-            1. valida que el vector sea válido,
-            2. calcula la categoría más compatible,
-            3. aplica el test de vigilancia,
-            4. si supera la prueba, adapta los pesos y devuelve el cluster asignado.
-
-            Parámetros:
-                x: vector binario de entrada de tamaño N.
-
-            Retorna:
-                (cluster_id, match_ratio)
-                - cluster_id: índice de la categoría ganadora.
-                - match_ratio: proporción de coincidencia con la plantilla.
-        
-        """
-        # Verifica que la longitud del vector coincida con la dimensión de entrada de la red.
+        """Asigna un patrón binario a una categoría. Devuelve (cluster_id, match_ratio)."""
         if len(x) != self.N:
             raise ValueError(f"Dimensión de entrada inválida ({len(x)}). Se esperaban {self.N} elementos.")
-        # Verifica que el patrón sea binario, es decir, que cada valor sea 0 o 1.
         if any(bit not in (0, 1) for bit in x):
             raise ValueError("El vector de entrada contiene valores no binarios (diferentes de 0 o 1).")
 
-        # Norma del vector de entrada: cantidad de bits activos (1s).
         norm_x = sum(x)
         if norm_x == 0:
             return 0, 1.0
 
-        # En cada iteración, si una categoría falla la prueba de vigilancia,
-        # se desactiva para no volver a elegirla.
+        # categorías que ya fallaron la vigilancia
         active_mask = [True] * self.M
 
         while True:
-            # 1) Calcula el score de coincidencia para todas las categorías activas.
             scores = self._compute_matching_scores(x, active_mask)
-            
-            # 2) Selecciona la categoría con mayor puntaje.
             max_score = max(scores)
-            
-            # Si todas las categorías quedaron desactivadas, la red ya no puede clasificar.
+
             if max_score < 0:
                 raise RuntimeError("Capacidad de la red alcanzada: No quedan categorías disponibles.")
 
-            # Índice de la categoría ganadora.
             j_star = scores.index(max_score)
 
-            # 3) Test de vigilancia ART1.
-            # T = plantilla top-down de la categoría elegida intersectada con el patrón x.
+            # test de vigilancia: T = plantilla AND x
             T = [self.t[j_star][i] * x[i] for i in range(self.N)]
             norm_T = sum(T)
 
-
-            # Ratio de coincidencia: ||T|| / ||X||
             match_ratio = norm_T / float(norm_x)
 
-            # Si el patrón es suficientemente compatible con la categoría,
-            # se acepta y se actualizan los pesos.
             if match_ratio >= self.rho:
                 self._adapt_weights(j_star, T)
                 if j_star >= self.num_committed_categories:
                     self.num_committed_categories = j_star + 1
                 return j_star, match_ratio
-            
-            # Si la categoría no cumple el umbral de vigilancia,
-            # se desactiva y se intenta otra.
             else:
                 active_mask[j_star] = False
 
     def _adapt_weights(self, j_star: int, T: List[float]):
-        """
-            Actualiza los pesos de la categoría ganadora después de aceptar un patrón.
-
-            En ART1, cuando una categoría gana y supera el test de vigilancia,
-            se adapta su plantilla prototipo para reflejar mejor el nuevo patrón
-            de entrada. Esto permite que la red aprenda sin perder estabilidad.
-
-            Parámetros:
-                j_star: índice de la categoría ganadora.
-                T: vector resultante de la intersección entre la plantilla top-down
-                y el patrón de entrada, es decir, T = t_ji * x_i.
-        """
+        """Actualiza los pesos de la categoría ganadora."""
         for i in range(self.N):
             self.t[j_star][i] = T[i]
 
@@ -163,7 +91,7 @@ class ART1Network:
             self.b[i][j_star] = self.t[j_star][i] / denominator
 
     def fit(self, dataset: List[List[int]]) -> List[Dict[str, float]]:
-        """Entrena la red procesando secuencialmente cada patrón del dataset."""
+        """Entrena la red patrón por patrón."""
         results = []
         for idx, pattern in enumerate(dataset):
             cluster_id, match_ratio = self.train_pattern(pattern)
@@ -177,14 +105,14 @@ class ART1Network:
         return results
 
     def get_cluster_templates(self) -> Dict[int, List[int]]:
-        """Retorna las plantillas binarias de cada cluster formado."""
+        """Plantillas binarias de cada cluster."""
         templates = {}
         for j in range(self.num_committed_categories):
             templates[j] = [int(self.t[j][i]) for i in range(self.N)]
         return templates
 
     def compute_metrics(self, validation_labels: Optional[List[str]] = None) -> Dict[str, float]:
-        """Calcula métricas clave de evaluación."""
+        """Métricas de la corrida."""
         if not self.history_ratios:
             return {}
 
@@ -219,9 +147,9 @@ class ART1Network:
 
 
 def infer_specialty_and_recommendations(active_symptoms: List[str]) -> Tuple[str, List[str]]:
-    """Infiere especialidad médica y estudios recomendados según síntomas activos."""
+    """Devuelve especialidad y recomendaciones según los síntomas activos."""
     symptoms_set = set(s.lower() for s in active_symptoms)
-    
+
     if "disnea" in symptoms_set or "tos" in symptoms_set:
         spec = "NEUMONOLOGÍA"
         recs = [
@@ -260,12 +188,7 @@ def infer_specialty_and_recommendations(active_symptoms: List[str]) -> Tuple[str
 
 
 def _normalize_numeric_str(text: str) -> str:
-    """Unifica la representación de números entre formatos: '1.0' -> '1'.
-
-    Es el mismo resultado que queda al leer una celda numérica desde XLSX,
-    de modo que un CSV y un XLSX del mismo dataset den exactamente lo mismo.
-    Solo actúa sobre números canónicos, para no alterar IDs con formato '007'.
-    """
+    """'1.0' -> '1' (así CSV y XLSX dan lo mismo). No toca IDs tipo '007'."""
     if not text or text[0] not in '0123456789.-':
         return text
     try:
@@ -279,11 +202,7 @@ def _normalize_numeric_str(text: str) -> str:
 
 
 def _cell_to_str(value: Any) -> str:
-    """Normaliza un valor de celda (Excel o CSV) a texto plano.
-
-    De esta forma ambos formatos producen exactamente los mismos strings:
-    None -> "", True/False -> "1"/"0", 1.0 -> "1" (mismo resultado que lee un CSV).
-    """
+    """Pasa una celda a texto: None -> "", True/False -> "1"/"0", 1.0 -> "1"."""
     if value is None:
         return ""
     if isinstance(value, bool):
@@ -294,13 +213,8 @@ def _cell_to_str(value: Any) -> str:
 
 
 def _read_csv_rows(file_path: str) -> List[List[str]]:
-    """Lee todas las filas de un archivo .csv como texto plano.
-
-    Ignora comentarios (líneas que empiezan con '#') y filas totalmente vacías
-    (típicas al final del archivo).
-    """
-    # utf-8-sig absorbe el BOM que dejan Excel/Windows al exportar;
-    # si el archivo no decodifica como UTF-8, se reintenta con la codificación local (cp1252).
+    """Lee las filas de un .csv, saltando comentarios (#) y filas vacías."""
+    # utf-8-sig por el BOM de Excel; si falla se prueba cp1252
     for encoding in ('utf-8-sig', 'cp1252'):
         try:
             with open(file_path, mode='r', encoding=encoding, newline='') as f:
@@ -318,7 +232,7 @@ def _read_csv_rows(file_path: str) -> List[List[str]]:
 
 
 def _xlsx_col_index(cell_ref: str) -> int:
-    """Convierte la referencia de celda ('B3') en índice de columna base 0 (1)."""
+    """'B3' -> 1 (columna base 0)."""
     idx = 0
     letters = 0
     for ch in cell_ref:
@@ -330,27 +244,22 @@ def _xlsx_col_index(cell_ref: str) -> int:
 
 
 def _xlsx_cell_value(cell: Any, shared_strings: List[str], ns: str) -> str:
-    """Extrae el valor de una celda .xlsx (lector stdlib) normalizado a texto."""
+    """Valor de una celda .xlsx como texto."""
     cell_type = cell.get("t", "n")
     if cell_type == "inlineStr":
         return "".join(t.text or "" for t in cell.iter(f"{ns}t")).strip()
     v = cell.find(f"{ns}v")
     if v is None or v.text is None:
         return ""
-    if cell_type == "s":  # índice dentro de las cadenas compartidas
+    if cell_type == "s":  # índice a shared strings
         return _normalize_numeric_str(shared_strings[int(v.text)].strip())
-    if cell_type == "b":  # booleano de Excel -> 1 / 0
+    if cell_type == "b":  # booleano
         return "1" if v.text.strip() == "1" else "0"
-    # Valores numéricos: '1.0' se normaliza a '1' para que coincida con lo que lee un CSV.
     return _normalize_numeric_str(v.text.strip())
 
 
 def _read_xlsx_rows_stdlib(file_path: str) -> List[List[str]]:
-    """Lector .xlsx mínimo sin dependencias externas (lee la primera hoja del libro).
-
-    Un archivo .xlsx es un ZIP con XML adentro: se leen las cadenas compartidas
-    y la hoja de cálculo con xml.etree. Cubre hojas simples de celdas de texto/número.
-    """
+    """Lector .xlsx mínimo (primera hoja). Un xlsx es un ZIP con XML adentro."""
     import zipfile
     import xml.etree.ElementTree as ET
 
@@ -361,14 +270,14 @@ def _read_xlsx_rows_stdlib(file_path: str) -> List[List[str]]:
     with zipfile.ZipFile(file_path) as z:
         names = z.namelist()
 
-        # 1) Cadenas compartidas: el texto de las celdas vive acá, indexado.
+        # shared strings
         shared_strings: List[str] = []
         if "xl/sharedStrings.xml" in names:
             sst = ET.fromstring(z.read("xl/sharedStrings.xml"))
             for si in sst.findall(f"{ns}si"):
                 shared_strings.append("".join(t.text or "" for t in si.iter(f"{ns}t")))
 
-        # 2) Primera hoja declarada en el libro, resuelta vía sus relaciones.
+        # primera hoja
         wb = ET.fromstring(z.read("xl/workbook.xml"))
         first_sheet = wb.find(f"{ns}sheets/{ns}sheet")
         if first_sheet is None:
@@ -383,7 +292,7 @@ def _read_xlsx_rows_stdlib(file_path: str) -> List[List[str]]:
             raise ValueError(f"No se pudo ubicar la hoja de cálculo en '{file_path}'.")
         sheet_path = target.lstrip("/") if target.startswith("/") else "xl/" + target
 
-        # 3) Filas y celdas (las celdas ausentes se rellenan con "" para alinear columnas).
+        # filas; las celdas que faltan se rellenan con ""
         sheet = ET.fromstring(z.read(sheet_path))
         rows = []
         for row_el in sheet.iter(f"{ns}row"):
@@ -400,10 +309,7 @@ def _read_xlsx_rows_stdlib(file_path: str) -> List[List[str]]:
 
 
 def _read_xlsx_rows(file_path: str) -> List[List[str]]:
-    """Lee todas las filas de una hoja .xlsx como texto plano.
-
-    Usa openpyxl si está instalado; si no, el lector stdlib (_read_xlsx_rows_stdlib).
-    """
+    """Lee las filas de un .xlsx (openpyxl si está, si no el lector stdlib)."""
     try:
         import openpyxl
     except ImportError:
@@ -415,16 +321,11 @@ def _read_xlsx_rows(file_path: str) -> List[List[str]]:
     else:
         rows = _read_xlsx_rows_stdlib(file_path)
 
-    # Se descartan las filas totalmente vacías (formato residual al final de la hoja).
     return [row for row in rows if any(cell != "" for cell in row)]
 
 
 def _drop_phantom_columns(rows: List[List[str]]) -> List[List[str]]:
-    """Elimina columnas fantasma del índice de pandas ('Unnamed: 0' o header vacío).
-
-    Solo se descartan si están al principio de la fila o si todos sus valores son vacíos,
-    para que un CSV y un XLSX exportados desde el mismo DataFrame den exactamente lo mismo.
-    """
+    """Saca columnas fantasma de pandas ('Unnamed: 0' o header vacío)."""
     if not rows:
         return rows
     width = max(len(r) for r in rows)
@@ -444,14 +345,13 @@ def _drop_phantom_columns(rows: List[List[str]]) -> List[List[str]]:
 
 
 def load_dataset(file_path: str) -> Tuple[List[List[int]], List[str], Optional[List[str]], List[str]]:
-    """Carga dataset Excel (.xlsx) o CSV (.csv)."""
+    """Carga un dataset .xlsx o .csv."""
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"El archivo '{file_path}' no fue encontrado.")
 
     patient_ids = []
-    
+
     if file_path.endswith('.xlsx'):
-        # openpyxl si está instalado; si no, lector stdlib (zipfile + xml.etree).
         all_rows = _read_xlsx_rows(file_path)
     else:
         with open(file_path, mode='r', encoding='utf-8') as f:
@@ -523,7 +423,7 @@ def generate_individual_patient_report(
     matching_ratio: float,
     reference_label: Optional[str] = None
 ) -> str:
-    """Genera la Ficha e Informe Clínico Individual detallado del paciente/cliente."""
+    """Arma la ficha individual de un paciente."""
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     active_symptoms = [feature_names[i] for i, bit in enumerate(symptoms_vector) if bit == 1]
     absent_symptoms = [feature_names[i] for i, bit in enumerate(symptoms_vector) if bit == 0]
@@ -570,19 +470,19 @@ def generate_individual_patient_report(
 
     report += """
 ----------------------------------------------------------------------------
- NOTA: Este informe es generado mediante Inteligencia Artificial (Red ART1)
- con Aprendizaje No Supervisado. Debe ser validado por un profesional médico.
+ NOTA: Resultado orientativo del agrupamiento ART1 (aprendizaje no supervisado).
+ Debe ser revisado por un profesional médico. TFI - UADER.
 ============================================================================
 """
     return report
 
 
 def run_interactive_mode(art1: ART1Network, feature_names: List[str], save_txt_path: Optional[str] = None):
-    """Ejecuta la evaluación interactiva solicitando nombre y síntomas de un paciente en vivo."""
+    """Pide nombre y síntomas por consola y arma la ficha."""
     print("\n============================================================================")
     print("      MODO CONSULTA INTERACTIVA DE PACIENTE / CLIENTE EN VIVO")
     print("============================================================================")
-    
+
     patient_name = input("\n[?] Ingrese el Nombre o ID del Paciente / Cliente: ").strip()
     if not patient_name:
         patient_name = "PAC_CLIENTE_INTERACTIVO"
@@ -619,164 +519,155 @@ def run_interactive_mode(art1: ART1Network, feature_names: List[str], save_txt_p
 
 
 def print_manual():
-    """Imprime el Manual de Referencia Técnica (--man)."""
+    """Imprime el manual (--man)."""
     man_text = """================================================================================
-   MANUAL DE REFERENCIA TÉCNICA Y DE USUARIO - RED NEURONAL ART1 (CarGross.py)
+   MANUAL DE REFERENCIA - RED ART1 (CarGross.py)
 ================================================================================
 
-1. DESCRIPCIÓN DEL SISTEMA
+1. DESCRIPCIÓN
 --------------------------------------------------------------------------------
-Este módulo implementa el clasificador no supervisado ART1 (Adaptive Resonance
-Theory 1) desarrollado por Gail Carpenter y Stephen Grossberg (1987), siguiendo
-la formulación matemática de Richard Lippmann (1987) y Lau (1992, Box 3).
+CarGross.py implementa la red ART1 (Adaptive Resonance Theory 1) de Carpenter y
+Grossberg (1987), siguiendo el Box 3 de Lau (1992). Agrupa pacientes a partir de
+síntomas binarios (1 = presente, 0 = ausente), sin etiquetas previas.
 
-La red resuelve el Dilema de Estabilidad-Plasticidad, permitiendo aprender nuevos
-patrones sintomáticos (plasticidad) sin destruir las categorías previamente
-aprendidas (estabilidad).
+ART1 puede crear categorías nuevas cuando aparece un patrón distinto, sin
+borrar las que ya aprendió. Eso es lo que se conoce como el dilema
+estabilidad-plasticidad.
 
-2. ARQUITECTURA Y ALGORITMO (8 PASOS DE LAU, 1992)
+2. ALGORITMO
 --------------------------------------------------------------------------------
-- Capa F1 (Capa de Comparación): Recibe el vector binario de entrada X de dimensión N.
-- Capa F2 (Capa de Reconocimiento): Contiene M nodos de categoría con inhibición lateral.
-- Pesos Bottom-Up (b_ij): Inicializados en 1 / (1 + N). Filtran la entrada hacia F2.
-- Pesos Top-Down (t_ji): Inicializados en 1. Representan las plantillas prototipo.
-- Test de Vigilancia: Se evalúa ||T|| / ||X|| >= p.
-  * Si cumple: Se acepta la categoría j* y se adaptan los pesos mediante la regla AND.
-  * Si no cumple: Se deshabilita el nodo j* y se busca el siguiente mejor candidato.
+- Capa F1 (comparación): recibe el vector binario X de N elementos.
+- Capa F2 (reconocimiento): tiene hasta M nodos de categoría. Gana el que
+  tiene mayor puntaje.
+- Pesos bottom-up (b_ij): arrancan en 1 / (1 + N).
+- Pesos top-down (t_ji): arrancan en 1. Son la plantilla de cada categoría.
+- Test de vigilancia: se calcula ||T|| / ||X||, donde T = plantilla AND X.
+  * Si es mayor o igual que rho, el paciente entra a esa categoría y la
+    plantilla se actualiza con el AND.
+  * Si es menor, se descarta ese nodo y se prueba con el siguiente mejor. Si
+    no queda ninguno, se crea una categoría nueva.
 
-3. SINTAXIS Y COMANDOS DE EJECUCIÓN
+3. USO
 --------------------------------------------------------------------------------
-Sintaxis básica:
   python src/CarGross.py <archivo_dataset> [opciones]
   python src/CarGross.py --input <archivo_dataset> [opciones]
 
-Argumentos Principales:
-  pos_input / --input <ruta> Ruta al dataset. Formato de entrada: CSV (.csv);
-                      también se admiten archivos Excel (.xlsx).
-  -r, --rho <float>          Parámetro de vigilancia entre 0.0 y 1.0 (Defecto: 0.65).
-  -o, --output <ruta>        Ruta del archivo CSV para exportar resultados globales.
-  --save-txt <ruta>          Ruta para exportar el reporte descriptivo TXT.
-  -v, --verbose              Muestra el detalle del procesamiento en consola.
-  --interactive              Abre el modo interactivo de consulta para un paciente.
-  --patient-id <ID>          Genera la ficha médica individual de un paciente por su ID.
-  --shuffle <N>              Ejecuta N corridas con barajado aleatorio para test de estabilidad.
-  --seed <S>                 Semilla para reproducibilidad del barajado (Defecto: 42).
-  --test                     Ejecuta el Smoke Test automático de autoverificación.
-  --man                      Muestra este manual de referencia técnica.
+Opciones:
+  <archivo> / -i, --input <ruta>  Dataset de entrada. Formato CSV (.csv); también
+                                  se acepta Excel (.xlsx).
+  -r, --rho <float>      Parámetro de vigilancia, entre 0.0 y 1.0 (defecto 0.65).
+  -o, --output <ruta>    CSV con el resultado por paciente (defecto:
+                         resultados_cargross.csv).
+  --save-txt <ruta>      Guarda el reporte en un TXT.
+  --max_cat <N>          Máximo de categorías (defecto 50).
+  -v, --verbose          Muestra también los síntomas detectados.
+  --interactive          Carga un paciente por consola y lo clasifica.
+  --patient-id <ID>      Ficha individual de un paciente del dataset (por ID o
+                         por número de fila).
+  --shuffle <N>          Repite la corrida N veces con el orden mezclado.
+  --seed <S>             Semilla del barajado (defecto 42).
+  --test                 Autotest rápido.
+  --man                  Muestra este manual.
 
-4. EJEMPLOS DE USO PRÁCTICO
+4. EJEMPLOS
 --------------------------------------------------------------------------------
-a) ejecutar el Smoke Test de verificación:
+a) Autotest:
    python src/CarGross.py --test
 
-b) Procesar Dataset de Entrenamiento:
+b) Dataset de entrenamiento:
    python src/CarGross.py data/dataset_entrenamiento_ART1.csv -o results/res_entrenamiento.csv --save-txt results/res_entrenamiento.txt
 
-c) Procesar el Dataset de validacion:
+c) Dataset de validación:
    python src/CarGross.py data/dataset_validacion_ART1.csv -o results/res_validacion.csv --save-txt results/res_validacion.txt
 
-d) procesar con un parámetro de vigilancia más estricto (r=0.80):
-   python src/CarGross.py data/dataset_entrenamiento_ART1.csv -r 0.80 -o results/res_entrenamiento_rho080.csv --save-txt results/res_entrenamiento_rho080.txt 
+d) Con un rho más exigente (0.80):
+   python src/CarGross.py data/dataset_entrenamiento_ART1.csv -r 0.80 -o results/res_entrenamiento_rho080.csv --save-txt results/res_entrenamiento_rho080.txt
 
-e) Modo Interactivo en Vivo (Solicita Nombre y Síntomas):
+e) Modo interactivo (pide nombre y síntomas):
    python src/CarGross.py data/dataset_entrenamiento_ART1.csv --interactive --save-txt results/informe_paciente.txt
 
-f) Test de Estabilidad con Barajado Aleatorio:
+f) Estabilidad con el orden mezclado:
    python src/CarGross.py data/dataset_entrenamiento_ART1.csv --shuffle 5 --seed 42 -o results/estable.csv --save-txt results/estable.txt
 
-   
 5. INSTALACIÓN
 --------------------------------------------------------------------------------
-Requisitos: Python 3.10 o superior.
+Hace falta Python 3.10 o superior.
 
   git clone <url-del-repo>
   python -m venv venv
   .\\venv\\Scripts\\Activate.ps1        (en bash: source venv/bin/activate)
   pip install -r requirements.txt
 
-Para verificar que quedó bien:
+Para chequear que anda:
 
   python src/CarGross.py --test
 
-Si imprime "TEST PASSED", todo listo.
+Si imprime "TEST PASSED", está todo bien.
 
-Nota: los .csv se leen con la librería estándar de Python, no hace falta
-instalar nada extra. openpyxl solo se usa para .xlsx y pandas/matplotlib solo
-para el notebook.
+Los .csv se leen con la biblioteca estándar, así que no hace falta instalar
+nada para usarlos. openpyxl se usa solo para .xlsx (si no está, hay un lector
+propio) y pandas/matplotlib solo para el notebook.
 
-6. DATASETS, CÓMO CORRERLOS Y SALIDA ESPERADA
+6. DATASETS Y SALIDA ESPERADA
 --------------------------------------------------------------------------------
-Los datasets incluidos están en formato CSV (el formato de entrada del
-módulo) y tienen 100 registros y 5 variables cada uno:
+Los dos datasets están en data/ y tienen 100 registros y 5 síntomas:
 
   data/dataset_entrenamiento_ART1.csv     100 pacientes, 5 síntomas
   data/dataset_validacion_ART1.csv        100 pacientes, 5 síntomas + etiqueta
 
-Cada CSV tiene: primera columna con el ID del paciente, una columna por
-síntoma con 1/0, y opcionalmente una última columna con la especialidad
-esperada (solo se usa para calcular la pureza).
+Cada CSV tiene el ID del paciente en la primera columna, una columna 1/0 por
+síntoma y, opcionalmente, la especialidad esperada en la última (se usa solo
+para calcular la pureza).
 
-Comandos:
+Por consola se ve: la ruta del archivo y el rho, cuántos registros y síntomas
+se cargaron, el resumen (clusters formados, matching ratio, estabilidad y
+pureza si hay etiquetas) y la plantilla de cada cluster con su especialidad.
 
-  python src/CarGross.py data/dataset_entrenamiento_ART1.csv -o results/res_entrenamiento.csv --save-txt results/res_entrenamiento.txt
-  python src/CarGross.py data/dataset_validacion_ART1.csv -o results/res_validacion.csv --save-txt results/res_validacion.txt
+El CSV de salida (-o) tiene una fila por paciente con ID, cluster, matching
+ratio y especialidad sugerida. El TXT (--save-txt) tiene el reporte completo.
+Si la carpeta de salida no existe, se crea.
 
-En consola se ve: la ruta del archivo y el rho, la cantidad de registros y
-síntomas cargados, el resumen con clusters formados (M), matching ratio y
-estabilidad (y pureza si el dataset trae etiquetas), y las plantillas de cada
-cluster con su especialidad sugerida.
-
-En archivos: el CSV (-o) deja una fila por paciente con ID, cluster, matching
-ratio y especialidad; el TXT (--save-txt) deja el reporte completo. Si la
-carpeta de salida no existe, se crea sola.
-
-Con rho 0.65 los resultados de referencia son:
+Con rho 0.65 se obtiene:
 
   - Entrenamiento: 14 clusters, matching ratio 0.9500.
   - Validación: 12 clusters, matching ratio 0.9600, pureza 69%.
 
-El detalle de las corridas está en docs/informe.md.
+Las corridas completas están en docs/informe.md.
 
-7. ALCANCES Y LIMITACIONES
+7. LIMITACIONES
 --------------------------------------------------------------------------------
-- Es una herramienta académica: no diagnostica pacientes. La especialidad que
-  sugiere es una traducción de la plantilla del cluster y hay que validarla
-  con un profesional de la salud.
-- Solo acepta valores 0 y 1. Si el archivo trae otra cosa, corta con [ERROR].
-- ART1 depende del orden de los registros: si se barajan los pacientes pueden
-  cambiar los clusters. Es una propiedad conocida del algoritmo (se puede
-  medir con --shuffle).
-- El rho se elige a mano. Con rho bajo los clusters quedan grandes y
-  mezclados; con rho alto quedan muchos y chicos.
-- El máximo de clusters está limitado por --max_cat (50 por defecto).
-- No hay interfaz gráfica ni guarda nada por sí solo: hay que pasar -o y/o
-  --save-txt para generar archivos.
+- Es un trabajo académico. No diagnostica: la especialidad sugerida sale de las
+  plantillas del cluster y la tiene que revisar un profesional de la salud.
+- Solo acepta valores 0 y 1. Si el archivo trae otra cosa, termina con [ERROR].
+- El resultado depende del orden de los registros. Con --shuffle se puede ver
+  cuánto cambia.
+- El rho se elige a mano. Con rho bajo los clusters quedan pocos y mezclados;
+  con rho alto quedan muchos y chicos.
+- La cantidad de clusters está limitada por --max_cat (50 por defecto).
+- No guarda nada por sí solo: para tener archivos hay que usar -o y/o
+  --save-txt.
 
 8. PREGUNTAS FRECUENTES
 --------------------------------------------------------------------------------
-P: ¿Por qué hay que hacer pip install si dice que no hay dependencias?
-R: Para los .csv no hace falta nada: se leen con la biblioteca estándar. El
-   pip install es solo para .xlsx (openpyxl) y para el notebook (pandas,
+P: ¿Para qué es el pip install si los .csv no necesitan nada?
+R: Solo para leer .xlsx (openpyxl) y para correr el notebook (pandas,
    matplotlib).
 
 P: ¿Cómo elijo el rho?
-R: No hay un valor exacto. Con 0.65 los clusters quedan razonables y la
-   pureza da 69%. Si se sube mucho, se fragmentan los grupos; si se baja
-   mucho, se mezclan. Lo mejor es probar varios valores y mirar la cantidad
-   de clusters y la pureza.
+R: No hay un valor exacto. Con 0.65 se obtienen 14 y 12 clusters y una pureza
+   de 69% en validación. Subirlo fragmenta los grupos y bajarlo los mezcla, así
+   que conviene probar varios valores y mirar clusters y pureza.
 
-P: ¿Por qué cambian los clusters si barajo los datos?
-R: ART1 aprende registro por registro, y el orden en que llegan los pacientes
-   define qué plantillas se crean. Es propio del algoritmo, y por eso existe
-   el modo --shuffle para medirlo.
+P: ¿Por qué cambian los clusters si mezclo los datos?
+R: ART1 aprende un registro por vez, entonces el orden en que llegan los
+   pacientes influye en qué plantillas se crean. Con --shuffle se mide.
 
 P: ¿Puedo usar mis propios datos?
-R: Sí, con un CSV con ID, variables en 0/1 y (opcional) la etiqueta al final.
-   Si algún valor no es 0 o 1, la corrida corta con [ERROR].
+R: Sí, con un CSV con ID, síntomas en 0/1 y (opcional) la etiqueta al final.
 
-P: ¿Esto diagnostica pacientes?
-R: No, solo agrupa. Es un trabajo de la materia Redes Neuronales y la salida
-   tiene que ser revisada por un profesional médico.
+P: ¿Diagnostica pacientes?
+R: No, solo agrupa. Es un trabajo práctico de la materia Inteligencia
+   Artificial y cualquier resultado tiene que revisarlo un profesional médico.
 
 ================================================================================
 """
@@ -784,7 +675,7 @@ R: No, solo agrupa. Es un trabajo de la materia Redes Neuronales y la salida
 
 
 def run_smoke_test():
-    """Ejecuta autotest de verificación."""
+    """Autotest rápido (--test)."""
     print("[TEST] Iniciando Smoke Test de la Red ART1...")
     sample_patterns = [
         [1, 0, 0, 0, 0, 1],
@@ -798,8 +689,7 @@ def run_smoke_test():
 
 
 def main():
-    """Punto de entrada con manejo de errores de corrida: todo fallo
-    previsible se informa con [ERROR] y una pista hacia --man / --help."""
+    """Punto de entrada: los errores previsibles salen como [ERROR]."""
     try:
         _run()
     except (FileNotFoundError, FileExistsError, ValueError, ImportError, OSError) as exc:
@@ -815,7 +705,7 @@ def _run():
         description="CarGross.py - Red Neuronal ART1 (Carpenter-Grossberg) para Diagnóstico Médico.",
         add_help=True
     )
-    
+
     parser.add_argument("pos_input", nargs="?", type=str, default=None, help="Ruta al archivo dataset (.xlsx / .csv)")
     parser.add_argument("--input", "-i", type=str, default=None, help="Ruta al archivo dataset (.xlsx / .csv)")
     parser.add_argument("--rho", "-r", type=float, default=0.65, help="Parámetro de vigilancia (0.0 a 1.0, defecto: 0.65)")
@@ -863,12 +753,12 @@ def _run():
     results = art1.fit(patterns)
     metrics = art1.compute_metrics(validation_labels=labels)
 
-    # 1. Modo Interactivo
+    # modo interactivo
     if args.interactive:
         run_interactive_mode(art1, feature_names, save_txt_path=args.save_txt)
         return
 
-    # 2. Modo Ficha de Paciente por ID
+    # ficha de un paciente
     if args.patient_id:
         target_idx = None
         for idx, pid in enumerate(patient_ids):
@@ -876,7 +766,7 @@ def _run():
                 target_idx = idx
                 break
         if target_idx is None:
-            # Intento por índice numérico de paciente (ej. "1" -> índice 0)
+            # si no es un ID, probar como número de paciente ("1" -> índice 0)
             if args.patient_id.isdigit():
                 idx_num = int(args.patient_id) - 1
                 if 0 <= idx_num < num_patients:
@@ -910,10 +800,10 @@ def _run():
             print(f"[ÉXITO] Ficha del paciente '{p_id}' guardada en '{args.save_txt}'.")
         return
 
-    # 3. Reporte General Normal
+    # reporte general
     txt_lines = []
     header_info = f"""================================================================
-   RED NEURONAL CARPENTER-GROSSBERG (ART1) - DIAGNÓSTICO MÉDICO 
+   RED NEURONAL CARPENTER-GROSSBERG (ART1) - DIAGNÓSTICO MÉDICO
 ================================================================
 -> Archivo de entrada: {input_path}
 -> Parámetro de Vigilancia (rho): {args.rho:.2f}
@@ -939,11 +829,11 @@ def _run():
 
     txt_lines.append(templates_str)
 
-    # 4. Test de Estabilidad (Shuffle) si corresponde
+    # test de estabilidad con barajado
     if args.shuffle > 0:
         print("\n--- TEST DE ESTABILIDAD CON BARAJADO ALEATORIO ---")
         st_summary = f"--- TEST DE ESTABILIDAD CON BARAJADO ALEATORIO ({args.shuffle} CORRIDAS) ---\n"
-        
+
         clusters_list = []
         ratios_list = []
         rng = random.Random(args.seed)
@@ -975,11 +865,10 @@ def _run():
         txt_lines.append(txt_lines.pop() + "\n" if txt_lines else "")
         txt_lines.append(st_summary)
 
-    # Imprimir resumen en consola
     for block in txt_lines[1:]:
         print(block)
 
-    # Exportar CSV de asignación general
+    # CSV de salida
     if args.output:
         os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
         with open(args.output, mode='w', newline='', encoding='utf-8') as f_out:
@@ -993,12 +882,12 @@ def _run():
                 writer.writerow([p_id, r["cluster_assigned"], f"{r['matching_ratio']:.4f}", spec])
         print(f"[ÉXITO] Resultados guardados en CSV '{args.output}'.")
 
-    # Exportar Reporte TXT general
+    # TXT de salida
     if args.save_txt:
         os.makedirs(os.path.dirname(os.path.abspath(args.save_txt)), exist_ok=True)
         with open(args.save_txt, mode='w', encoding='utf-8') as f_txt:
             f_txt.write("\n".join(txt_lines))
-            f_txt.write(f"\n================================================================\n Reporte generado automáticamente: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n================================================================\n")
+            f_txt.write(f"\n================================================================\n Reporte generado el: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n================================================================\n")
         print(f"[ÉXITO] Reporte TXT completo guardado en '{args.save_txt}'.")
 
 
